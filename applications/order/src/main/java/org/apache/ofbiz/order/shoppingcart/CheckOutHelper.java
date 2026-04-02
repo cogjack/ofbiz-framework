@@ -51,7 +51,9 @@ import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.entity.util.EntityTypeUtil;
 import org.apache.ofbiz.entity.util.EntityUtil;
 import org.apache.ofbiz.entity.util.EntityUtilProperties;
+import org.apache.ofbiz.manufacturing.rest.ManufacturingApiConfig;
 import org.apache.ofbiz.order.finaccount.FinAccountHelper;
+import org.apache.ofbiz.order.manufacturing.ManufacturingRestClient;
 import org.apache.ofbiz.order.order.OrderChangeHelper;
 import org.apache.ofbiz.order.order.OrderReadHelper;
 import org.apache.ofbiz.order.shoppingcart.product.ProductPromoWorker;
@@ -750,9 +752,37 @@ public class CheckOutHelper {
                         inputMap.put("quantity", orderItem.getBigDecimal("quantity"));
                         inputMap.put("userLogin", permUserLogin);
 
-                        Map<String, Object> prunResult = dispatcher.runSync("createProductionRunFromConfiguration", inputMap);
+                        Map<String, Object> prunResult;
+                        if (ManufacturingApiConfig.isUseRest()
+                                && !ManufacturingRestClient.isCircuitOpen()) {
+                            Debug.logVerbose("Using REST path for"
+                                    + " createProductionRunFromConfiguration", MODULE);
+                            String quantityStr = orderItem.getBigDecimal("quantity") != null
+                                    ? orderItem.getBigDecimal("quantity").toPlainString()
+                                    : null;
+                            prunResult = ManufacturingRestClient
+                                    .createProductionRunFromConfiguration(
+                                            ManufacturingApiConfig.getBaseUrl(),
+                                            productStore.getString("inventoryFacilityId"),
+                                            null, orderId,
+                                            orderItem.getString("orderItemSeqId"),
+                                            quantityStr);
+                            if ("error".equals(prunResult.get("responseMessage"))) {
+                                Debug.logWarning("REST call failed, falling"
+                                        + " back to dispatcher: "
+                                        + prunResult.get("errorMessage"), MODULE);
+                                prunResult = dispatcher.runSync(
+                                        "createProductionRunFromConfiguration",
+                                        inputMap);
+                            }
+                        } else {
+                            prunResult = dispatcher.runSync(
+                                    "createProductionRunFromConfiguration",
+                                    inputMap);
+                        }
                         if (ServiceUtil.isError(prunResult)) {
-                            Debug.logError(ServiceUtil.getErrorMessage(prunResult) + " for input:" + inputMap, MODULE);
+                            Debug.logError(ServiceUtil.getErrorMessage(prunResult)
+                                    + " for input:" + inputMap, MODULE);
                         }
                     }
                 } catch (GenericEntityException e) {
