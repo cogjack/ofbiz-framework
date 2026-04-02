@@ -64,6 +64,8 @@ import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.entity.util.EntityTypeUtil;
 import org.apache.ofbiz.entity.util.EntityUtil;
 import org.apache.ofbiz.entity.util.EntityUtilProperties;
+import org.apache.ofbiz.manufacturing.rest.ManufacturingApiConfig;
+import org.apache.ofbiz.order.manufacturing.ManufacturingRestClient;
 import org.apache.ofbiz.order.shoppingcart.CartItemModifyException;
 import org.apache.ofbiz.order.shoppingcart.CheckOutHelper;
 import org.apache.ofbiz.order.shoppingcart.ItemNotFoundException;
@@ -1356,9 +1358,36 @@ public class OrderServices {
                                     inputMap.put("orderId", orderItem.getString("orderId"));
                                     inputMap.put("orderItemSeqId", orderItem.getString("orderItemSeqId"));
                                     inputMap.put("userLogin", permUserLogin);
-                                    Map<String, Object> prunResult = dispatcher.runSync("createProductionRunForMktgPkg", inputMap);
+                                    Map<String, Object> prunResult;
+                                    if (ManufacturingApiConfig.isUseRest()
+                                            && !ManufacturingRestClient.isCircuitOpen()) {
+                                        Debug.logVerbose("Using REST path for"
+                                                + " createProductionRunForMktgPkg", MODULE);
+                                        prunResult = ManufacturingRestClient
+                                                .createProductionRunForMktgPkg(
+                                                        ManufacturingApiConfig.getBaseUrl(),
+                                                        orderItem.getString("orderId"),
+                                                        orderItem.getString("orderItemSeqId"),
+                                                        (String) inputMap.get("facilityId"));
+                                        if ("error".equals(
+                                                prunResult.get("responseMessage"))) {
+                                            Debug.logWarning("REST call failed,"
+                                                    + " falling back to dispatcher: "
+                                                    + prunResult.get("errorMessage"),
+                                                    MODULE);
+                                            prunResult = dispatcher.runSync(
+                                                    "createProductionRunForMktgPkg",
+                                                    inputMap);
+                                        }
+                                    } else {
+                                        prunResult = dispatcher.runSync(
+                                                "createProductionRunForMktgPkg",
+                                                inputMap);
+                                    }
                                     if (ServiceUtil.isError(prunResult)) {
-                                        Debug.logError(ServiceUtil.getErrorMessage(prunResult) + " for input:" + inputMap, MODULE);
+                                        Debug.logError(
+                                                ServiceUtil.getErrorMessage(prunResult)
+                                                        + " for input:" + inputMap, MODULE);
                                     }
                                 }
                             } catch (GenericServiceException e) {
@@ -1457,9 +1486,45 @@ public class OrderServices {
                                         inputMap.put("orderId", orderItem.getString("orderId"));
                                         inputMap.put("orderItemSeqId", orderItem.getString("orderItemSeqId"));
                                         inputMap.put("userLogin", permUserLogin);
-                                        Map<String, Object> prunResult = dispatcher.runSync("createProductionRunForMktgPkg", inputMap);
+                                        Map<String, Object> prunResult;
+                                        if (ManufacturingApiConfig.isUseRest()
+                                                && !ManufacturingRestClient
+                                                        .isCircuitOpen()) {
+                                            Debug.logVerbose("Using REST path for"
+                                                    + " createProductionRunForMktgPkg",
+                                                    MODULE);
+                                            prunResult = ManufacturingRestClient
+                                                    .createProductionRunForMktgPkg(
+                                                            ManufacturingApiConfig
+                                                                    .getBaseUrl(),
+                                                            orderItem.getString("orderId"),
+                                                            orderItem.getString(
+                                                                    "orderItemSeqId"),
+                                                            (String) inputMap
+                                                                    .get("facilityId"));
+                                            if ("error".equals(
+                                                    prunResult.get(
+                                                            "responseMessage"))) {
+                                                Debug.logWarning(
+                                                        "REST call failed, falling"
+                                                        + " back to dispatcher: "
+                                                        + prunResult.get("errorMessage"),
+                                                        MODULE);
+                                                prunResult = dispatcher.runSync(
+                                                        "createProductionRunForMktgPkg",
+                                                        inputMap);
+                                            }
+                                        } else {
+                                            prunResult = dispatcher.runSync(
+                                                    "createProductionRunForMktgPkg",
+                                                    inputMap);
+                                        }
                                         if (ServiceUtil.isError(prunResult)) {
-                                            Debug.logError(ServiceUtil.getErrorMessage(prunResult) + " for input:" + inputMap, MODULE);
+                                            Debug.logError(
+                                                    ServiceUtil.getErrorMessage(
+                                                            prunResult)
+                                                            + " for input:" + inputMap,
+                                                    MODULE);
                                         }
                                     }
                                 }
