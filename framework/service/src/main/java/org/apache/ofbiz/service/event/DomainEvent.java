@@ -22,10 +22,17 @@ import java.sql.Timestamp;
 import java.util.Collections;
 import java.util.Map;
 
+import org.apache.ofbiz.service.DispatchContext;
+
 /**
  * Base class for all domain events published through the {@link EventBus}.
  * Each event carries an event type identifier, a timestamp, the source module name,
  * and an arbitrary payload of key-value pairs.
+ *
+ * <p>For Phase 1 (in-process delivery), events may also carry a {@link DispatchContext}
+ * from the publishing service so that subscribers can invoke services without needing
+ * an independently obtained dispatcher. This field will be {@code null} for events
+ * delivered via an external broker in later phases.</p>
  */
 public class DomainEvent {
 
@@ -33,6 +40,7 @@ public class DomainEvent {
     private final Timestamp timestamp;
     private final String sourceModule;
     private final Map<String, Object> payload;
+    private DispatchContext dispatchContext;
 
     public DomainEvent(String eventType, String sourceModule, Map<String, Object> payload) {
         this.eventType = eventType;
@@ -59,6 +67,23 @@ public class DomainEvent {
     /** Returns the event payload as an unmodifiable map. */
     public Map<String, Object> getPayload() {
         return payload;
+    }
+
+    /**
+     * Returns the dispatch context from the publishing service, if available.
+     * Only populated for in-process (Phase 1) event delivery.
+     * @return the dispatch context, or {@code null} if not available
+     */
+    public DispatchContext getDispatchContext() {
+        return dispatchContext;
+    }
+
+    /**
+     * Sets the dispatch context for in-process event delivery.
+     * @param dctx the dispatch context from the publishing service
+     */
+    public void setDispatchContext(DispatchContext dctx) {
+        this.dispatchContext = dctx;
     }
 
     @Override

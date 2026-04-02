@@ -46,6 +46,7 @@ public class ProductEventPublisher {
         String productAssocTypeId = (String) context.get("productAssocTypeId");
 
         ProductAssocDeletedEvent event = new ProductAssocDeletedEvent(productId, productIdTo, productAssocTypeId);
+        event.setDispatchContext(dctx);
         EventBusFactory.getEventBus().publish(event);
 
         Debug.logInfo("Published ProductAssocDeletedEvent for productId=" + productId, MODULE);
@@ -64,6 +65,7 @@ public class ProductEventPublisher {
 
         ShipmentReceiptCreatedEvent event = new ShipmentReceiptCreatedEvent(
                 shipmentId, receiptId, productId, quantityAccepted, inventoryItemId);
+        event.setDispatchContext(dctx);
         EventBusFactory.getEventBus().publish(event);
 
         Debug.logInfo("Published ShipmentReceiptCreatedEvent for shipmentId=" + shipmentId, MODULE);

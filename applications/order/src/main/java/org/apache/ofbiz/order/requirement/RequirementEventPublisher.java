@@ -51,6 +51,7 @@ public class RequirementEventPublisher {
 
         RequirementCreatedEvent event = new RequirementCreatedEvent(
                 requirementId, requirementTypeId, facilityId, productId, quantity, requiredByDate);
+        event.setDispatchContext(dctx);
         EventBusFactory.getEventBus().publish(event);
 
         Debug.logInfo("Published RequirementCreatedEvent for requirementId=" + requirementId, MODULE);
@@ -66,6 +67,7 @@ public class RequirementEventPublisher {
         BigDecimal quantity = (BigDecimal) context.get("quantity");
 
         RequirementUpdatedEvent event = new RequirementUpdatedEvent(requirementId, statusId, quantity);
+        event.setDispatchContext(dctx);
         EventBusFactory.getEventBus().publish(event);
 
         Debug.logInfo("Published RequirementUpdatedEvent for requirementId=" + requirementId, MODULE);
