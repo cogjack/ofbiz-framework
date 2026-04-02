@@ -20,6 +20,7 @@ package org.apache.ofbiz.manufacturing.event;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.ofbiz.base.util.Debug;
 import org.apache.ofbiz.service.DispatchContext;
@@ -47,9 +48,13 @@ import org.apache.ofbiz.service.event.types.ShipmentReceiptCreatedEvent;
 public class ManufacturingEventSubscriber implements EventSubscriberModule {
 
     private static final String MODULE = ManufacturingEventSubscriber.class.getName();
+    private static final AtomicBoolean REGISTERED = new AtomicBoolean(false);
 
     @Override
     public void registerSubscriptions(EventBus eventBus) {
+        if (!REGISTERED.compareAndSet(false, true)) {
+            return;
+        }
         eventBus.subscribe(RequirementCreatedEvent.EVENT_TYPE,
                 ManufacturingEventSubscriber::handleRequirementCreated);
         eventBus.subscribe(RequirementUpdatedEvent.EVENT_TYPE,
