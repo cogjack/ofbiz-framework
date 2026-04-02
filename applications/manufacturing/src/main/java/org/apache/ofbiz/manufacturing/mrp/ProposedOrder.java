@@ -269,11 +269,12 @@ public class ProposedOrder {
         }
         try {
             OrderPort orderPort = new DispatcherOrderPort(dispatcher, userLogin);
+            String reqTypeId = isBuilt ? "INTERNAL_REQUIREMENT" : "PRODUCT_REQUIREMENT";
+            String reqFacilityId = isBuilt ? manufacturingFacilityId : facilityId;
             RequirementCreatedResult reqResult = orderPort.createRequirement(productId,
-                    (isBuilt ? "INTERNAL_REQUIREMENT" : "PRODUCT_REQUIREMENT"),
-                    (isBuilt ? manufacturingFacilityId : facilityId),
-                    "REQ_PROPOSED", requiredByDate, requirementStartDate,
-                    quantity, (String) parameters.get("description"));
+                    reqTypeId, reqFacilityId, "REQ_PROPOSED", requiredByDate,
+                    requirementStartDate, quantity,
+                    (String) parameters.get("description"));
             return reqResult.getRequirementId();
         } catch (RuntimeException e) {
             Debug.logError(e, "Error : createRequirement with parameters = " + parameters + "--" + e.getMessage(), MODULE);
