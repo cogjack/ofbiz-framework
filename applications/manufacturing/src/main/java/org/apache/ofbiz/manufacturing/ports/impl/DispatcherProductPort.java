@@ -20,23 +20,30 @@ package org.apache.ofbiz.manufacturing.ports.impl;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.ofbiz.base.util.UtilGenerics;
 import org.apache.ofbiz.base.util.UtilMisc;
+import org.apache.ofbiz.entity.Delegator;
+import org.apache.ofbiz.entity.GenericEntityException;
 import org.apache.ofbiz.entity.GenericValue;
+import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.manufacturing.ports.ProductPort;
-import org.apache.ofbiz.product.product.ProductWorker;
 import org.apache.ofbiz.manufacturing.ports.dto.CostComponentCreatedResult;
 import org.apache.ofbiz.manufacturing.ports.dto.InventoryAvailableResult;
 import org.apache.ofbiz.manufacturing.ports.dto.InventoryItemCreatedResult;
+import org.apache.ofbiz.manufacturing.ports.dto.InventoryItemData;
 import org.apache.ofbiz.manufacturing.ports.dto.LotCreatedResult;
 import org.apache.ofbiz.manufacturing.ports.dto.MktgPackagesAvailableResult;
+import org.apache.ofbiz.manufacturing.ports.dto.ProductAssocData;
 import org.apache.ofbiz.manufacturing.ports.dto.ProductCostResult;
+import org.apache.ofbiz.manufacturing.ports.dto.ProductData;
 import org.apache.ofbiz.manufacturing.ports.dto.ProductVariantResult;
 import org.apache.ofbiz.manufacturing.ports.dto.ShipmentPackageCreatedResult;
+import org.apache.ofbiz.product.product.ProductWorker;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
 import org.apache.ofbiz.service.ServiceUtil;
@@ -346,6 +353,101 @@ public final class DispatcherProductPort implements ProductPort {
             }
         } catch (GenericServiceException e) {
             throw new RuntimeException("Error calling createShipmentPackageContent", e);
+        }
+    }
+
+    // ========================================================================
+    // Phase 1G: Cross-domain entity read methods for schema separation
+    // ========================================================================
+
+    @Override
+    public ProductData getProduct(String productId) {
+        try {
+            Delegator delegator = dispatcher.getDelegator();
+            GenericValue product = EntityQuery.use(delegator).from("Product")
+                    .where("productId", productId).queryOne();
+            if (product == null) {
+                return null;
+            }
+            return ProductData.builder(product.getString("productId"))
+                    .productTypeId(product.getString("productTypeId"))
+                    .productName(product.getString("productName"))
+                    .internalName(product.getString("internalName"))
+                    .isVirtual(product.getString("isVirtual"))
+                    .isVariant(product.getString("isVariant"))
+                    .billOfMaterialLevel(product.getString("billOfMaterialLevel"))
+                    .facilityId(product.getString("facilityId"))
+                    .configId(product.getString("configId"))
+                    .quantityIncluded(product.getBigDecimal("quantityIncluded"))
+                    .quantityUomId(product.getString("quantityUomId"))
+                    .productWeight(product.getBigDecimal("productWeight"))
+                    .weightUomId(product.getString("weightUomId"))
+                    .productHeight(product.getBigDecimal("productHeight"))
+                    .productWidth(product.getBigDecimal("productWidth"))
+                    .productDepth(product.getBigDecimal("productDepth"))
+                    .build();
+        } catch (GenericEntityException e) {
+            throw new RuntimeException("Error looking up Product: " + productId, e);
+        }
+    }
+
+    @Override
+    public List<ProductAssocData> getProductAssocs(String productId, String productAssocTypeId,
+            Timestamp filterByDate) {
+        try {
+            Delegator delegator = dispatcher.getDelegator();
+            EntityQuery query = EntityQuery.use(delegator).from("ProductAssoc")
+                    .where("productId", productId, "productAssocTypeId", productAssocTypeId);
+            if (filterByDate != null) {
+                query = query.filterByDate(filterByDate);
+            }
+            List<GenericValue> assocs = query.queryList();
+            List<ProductAssocData> result = new ArrayList<>();
+            for (GenericValue assoc : assocs) {
+                result.add(new ProductAssocData(
+                        assoc.getString("productId"),
+                        assoc.getString("productIdTo"),
+                        assoc.getString("productAssocTypeId"),
+                        assoc.getTimestamp("fromDate"),
+                        assoc.getTimestamp("thruDate"),
+                        assoc.getBigDecimal("quantity"),
+                        assoc.getString("sequenceNum"),
+                        assoc.getString("reason"),
+                        assoc.getString("instruction"),
+                        assoc.getString("routingWorkEffortId"),
+                        assoc.getString("estimateCalcMethod"),
+                        assoc.getString("recurrenceInfoId"),
+                        assoc.getBigDecimal("scrapFactor")));
+            }
+            return result;
+        } catch (GenericEntityException e) {
+            throw new RuntimeException("Error looking up ProductAssoc for product: " + productId, e);
+        }
+    }
+
+    @Override
+    public InventoryItemData getInventoryItem(String inventoryItemId) {
+        try {
+            Delegator delegator = dispatcher.getDelegator();
+            GenericValue item = EntityQuery.use(delegator).from("InventoryItem")
+                    .where("inventoryItemId", inventoryItemId).queryOne();
+            if (item == null) {
+                return null;
+            }
+            return new InventoryItemData(
+                    item.getString("inventoryItemId"),
+                    item.getString("inventoryItemTypeId"),
+                    item.getString("productId"),
+                    item.getString("facilityId"),
+                    item.getString("lotId"),
+                    item.getString("uomId"),
+                    item.getBigDecimal("unitCost"),
+                    item.getString("currencyUomId"),
+                    item.getBigDecimal("quantityOnHandTotal"),
+                    item.getBigDecimal("availableToPromiseTotal"),
+                    item.getString("ownerPartyId"));
+        } catch (GenericEntityException e) {
+            throw new RuntimeException("Error looking up InventoryItem: " + inventoryItemId, e);
         }
     }
 }

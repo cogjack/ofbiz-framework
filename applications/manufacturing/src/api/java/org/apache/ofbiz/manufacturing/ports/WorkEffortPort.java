@@ -23,8 +23,11 @@ package org.apache.ofbiz.manufacturing.ports;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.util.List;
 
+import org.apache.ofbiz.manufacturing.ports.dto.WorkEffortAssocData;
 import org.apache.ofbiz.manufacturing.ports.dto.WorkEffortCreatedResult;
+import org.apache.ofbiz.manufacturing.ports.dto.WorkEffortData;
 
 /**
  * Port interface abstracting all outbound dispatcher calls from Manufacturing to the WorkEffort module.
@@ -166,4 +169,29 @@ public interface WorkEffortPort {
      */
     void createWorkEffortNote(String workEffortId, String noteInfo, String noteName,
             String noteParty, String internalNote);
+
+    // ========================================================================
+    // Phase 1G: Cross-domain entity read methods for schema separation
+    // ========================================================================
+
+    /**
+     * Retrieves a work effort by its primary key.
+     * <p>Replaces direct {@code EntityQuery.use(delegator).from("WorkEffort")} calls
+     * in manufacturing code (32 total work-effort-domain accesses).</p>
+     *
+     * @param workEffortId the work effort ID to look up
+     * @return work effort data projection, or null if not found
+     */
+    WorkEffortData getWorkEffort(String workEffortId);
+
+    /**
+     * Retrieves work effort associations for a given work effort.
+     * <p>Replaces direct {@code EntityQuery.use(delegator).from("WorkEffortAssoc")} calls
+     * used for routing task and production run association lookups.</p>
+     *
+     * @param workEffortIdFrom       the source work effort ID
+     * @param workEffortAssocTypeId  the association type filter (nullable for all types)
+     * @return list of matching work effort associations
+     */
+    List<WorkEffortAssocData> getWorkEffortAssocs(String workEffortIdFrom, String workEffortAssocTypeId);
 }

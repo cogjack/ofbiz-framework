@@ -20,12 +20,19 @@ package org.apache.ofbiz.manufacturing.ports.impl;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.ofbiz.base.util.UtilMisc;
+import org.apache.ofbiz.entity.Delegator;
+import org.apache.ofbiz.entity.GenericEntityException;
 import org.apache.ofbiz.entity.GenericValue;
+import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.manufacturing.ports.OrderPort;
+import org.apache.ofbiz.manufacturing.ports.dto.OrderHeaderData;
+import org.apache.ofbiz.manufacturing.ports.dto.OrderItemData;
 import org.apache.ofbiz.manufacturing.ports.dto.RequirementCreatedResult;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
@@ -85,6 +92,59 @@ public final class DispatcherOrderPort implements OrderPort {
             }
         } catch (GenericServiceException e) {
             throw new RuntimeException("Error calling updateRequirement", e);
+        }
+    }
+
+    // ========================================================================
+    // Phase 1G: Cross-domain entity read methods for schema separation
+    // ========================================================================
+
+    @Override
+    public OrderHeaderData getOrderHeader(String orderId) {
+        try {
+            Delegator delegator = dispatcher.getDelegator();
+            GenericValue oh = EntityQuery.use(delegator).from("OrderHeader")
+                    .where("orderId", orderId).queryOne();
+            if (oh == null) {
+                return null;
+            }
+            return new OrderHeaderData(
+                    oh.getString("orderId"),
+                    oh.getString("orderTypeId"),
+                    oh.getString("orderName"),
+                    oh.getString("statusId"),
+                    oh.getString("productStoreId"),
+                    oh.getTimestamp("orderDate"),
+                    oh.getString("currencyUom"));
+        } catch (GenericEntityException e) {
+            throw new RuntimeException("Error looking up OrderHeader: " + orderId, e);
+        }
+    }
+
+    @Override
+    public List<OrderItemData> getOrderItems(String orderId) {
+        try {
+            Delegator delegator = dispatcher.getDelegator();
+            List<GenericValue> items = EntityQuery.use(delegator).from("OrderItem")
+                    .where("orderId", orderId).queryList();
+            List<OrderItemData> result = new ArrayList<>();
+            for (GenericValue item : items) {
+                result.add(new OrderItemData(
+                        item.getString("orderId"),
+                        item.getString("orderItemSeqId"),
+                        item.getString("orderItemTypeId"),
+                        item.getString("productId"),
+                        item.getString("statusId"),
+                        item.getBigDecimal("quantity"),
+                        item.getBigDecimal("unitPrice"),
+                        item.getString("itemDescription"),
+                        item.getTimestamp("estimatedDeliveryDate"),
+                        item.getTimestamp("shipBeforeDate"),
+                        item.getTimestamp("shipAfterDate")));
+            }
+            return result;
+        } catch (GenericEntityException e) {
+            throw new RuntimeException("Error looking up OrderItems for order: " + orderId, e);
         }
     }
 }

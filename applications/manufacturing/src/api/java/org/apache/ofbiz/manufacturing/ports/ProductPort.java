@@ -20,14 +20,18 @@ package org.apache.ofbiz.manufacturing.ports;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.ofbiz.manufacturing.ports.dto.CostComponentCreatedResult;
 import org.apache.ofbiz.manufacturing.ports.dto.InventoryAvailableResult;
 import org.apache.ofbiz.manufacturing.ports.dto.InventoryItemCreatedResult;
+import org.apache.ofbiz.manufacturing.ports.dto.InventoryItemData;
 import org.apache.ofbiz.manufacturing.ports.dto.LotCreatedResult;
 import org.apache.ofbiz.manufacturing.ports.dto.MktgPackagesAvailableResult;
+import org.apache.ofbiz.manufacturing.ports.dto.ProductAssocData;
 import org.apache.ofbiz.manufacturing.ports.dto.ProductCostResult;
+import org.apache.ofbiz.manufacturing.ports.dto.ProductData;
 import org.apache.ofbiz.manufacturing.ports.dto.ProductVariantResult;
 import org.apache.ofbiz.manufacturing.ports.dto.ShipmentPackageCreatedResult;
 
@@ -225,4 +229,41 @@ public interface ProductPort {
      */
     void createShipmentPackageContent(String shipmentId, String shipmentPackageSeqId,
             String shipmentItemSeqId, BigDecimal quantity, String subProductId, BigDecimal subProductQuantity);
+
+    // ========================================================================
+    // Phase 1G: Cross-domain entity read methods for schema separation
+    // ========================================================================
+
+    /**
+     * Retrieves a product by its primary key.
+     * <p>Replaces direct {@code EntityQuery.use(delegator).from("Product")} calls
+     * in manufacturing code. This is the highest-priority entity access to port
+     * (39 total product-domain accesses from manufacturing).</p>
+     *
+     * @param productId the product ID to look up
+     * @return product data projection, or null if not found
+     */
+    ProductData getProduct(String productId);
+
+    /**
+     * Retrieves product associations for a given product, filtered by association type.
+     * <p>Replaces direct {@code EntityQuery.use(delegator).from("ProductAssoc")} calls
+     * used for BOM traversal and variant lookups in manufacturing.</p>
+     *
+     * @param productId          the source product ID
+     * @param productAssocTypeId the association type (e.g. MANUF_COMPONENT, PRODUCT_VARIANT)
+     * @param filterByDate       if non-null, only return associations active at this date
+     * @return list of matching product associations
+     */
+    List<ProductAssocData> getProductAssocs(String productId, String productAssocTypeId, Timestamp filterByDate);
+
+    /**
+     * Retrieves an inventory item by its primary key.
+     * <p>Replaces direct {@code EntityQuery.use(delegator).from("InventoryItem")} calls
+     * in manufacturing code for decomposition and production run processing.</p>
+     *
+     * @param inventoryItemId the inventory item ID to look up
+     * @return inventory item data projection, or null if not found
+     */
+    InventoryItemData getInventoryItem(String inventoryItemId);
 }

@@ -20,7 +20,10 @@ package org.apache.ofbiz.manufacturing.ports;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.util.List;
 
+import org.apache.ofbiz.manufacturing.ports.dto.OrderHeaderData;
+import org.apache.ofbiz.manufacturing.ports.dto.OrderItemData;
 import org.apache.ofbiz.manufacturing.ports.dto.RequirementCreatedResult;
 
 /**
@@ -62,4 +65,28 @@ public interface OrderPort {
      * @param requirementTypeId the requirement type (required by the service contract)
      */
     void updateRequirement(String requirementId, String statusId, String requirementTypeId);
+
+    // ========================================================================
+    // Phase 1G: Cross-domain entity read methods for schema separation
+    // ========================================================================
+
+    /**
+     * Retrieves an order header by its primary key.
+     * <p>Replaces direct {@code EntityQuery.use(delegator).from("OrderHeader")} calls
+     * in manufacturing code (25 total order-domain accesses).</p>
+     *
+     * @param orderId the order ID to look up
+     * @return order header data projection, or null if not found
+     */
+    OrderHeaderData getOrderHeader(String orderId);
+
+    /**
+     * Retrieves all order items for a given order.
+     * <p>Replaces direct {@code EntityQuery.use(delegator).from("OrderItem")} calls
+     * in manufacturing code for production run scheduling and fulfillment.</p>
+     *
+     * @param orderId the order ID
+     * @return list of order items for the given order
+     */
+    List<OrderItemData> getOrderItems(String orderId);
 }

@@ -20,13 +20,20 @@ package org.apache.ofbiz.manufacturing.ports.impl;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.ofbiz.base.util.UtilMisc;
+import org.apache.ofbiz.entity.Delegator;
+import org.apache.ofbiz.entity.GenericEntityException;
 import org.apache.ofbiz.entity.GenericValue;
+import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.manufacturing.ports.WorkEffortPort;
+import org.apache.ofbiz.manufacturing.ports.dto.WorkEffortAssocData;
 import org.apache.ofbiz.manufacturing.ports.dto.WorkEffortCreatedResult;
+import org.apache.ofbiz.manufacturing.ports.dto.WorkEffortData;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
 import org.apache.ofbiz.service.ServiceUtil;
@@ -261,6 +268,73 @@ public final class DispatcherWorkEffortPort implements WorkEffortPort {
             }
         } catch (GenericServiceException e) {
             throw new RuntimeException("Error calling createWorkEffortNote", e);
+        }
+    }
+
+    // ========================================================================
+    // Phase 1G: Cross-domain entity read methods for schema separation
+    // ========================================================================
+
+    @Override
+    public WorkEffortData getWorkEffort(String workEffortId) {
+        try {
+            Delegator delegator = dispatcher.getDelegator();
+            GenericValue we = EntityQuery.use(delegator).from("WorkEffort")
+                    .where("workEffortId", workEffortId).queryOne();
+            if (we == null) {
+                return null;
+            }
+            return WorkEffortData.builder(we.getString("workEffortId"))
+                    .workEffortTypeId(we.getString("workEffortTypeId"))
+                    .workEffortPurposeTypeId(we.getString("workEffortPurposeTypeId"))
+                    .currentStatusId(we.getString("currentStatusId"))
+                    .workEffortName(we.getString("workEffortName"))
+                    .workEffortParentId(we.getString("workEffortParentId"))
+                    .facilityId(we.getString("facilityId"))
+                    .estimatedStartDate(we.getTimestamp("estimatedStartDate"))
+                    .estimatedCompletionDate(we.getTimestamp("estimatedCompletionDate"))
+                    .actualStartDate(we.getTimestamp("actualStartDate"))
+                    .actualCompletionDate(we.getTimestamp("actualCompletionDate"))
+                    .quantityToProduce(we.getBigDecimal("quantityToProduce"))
+                    .quantityProduced(we.getBigDecimal("quantityProduced"))
+                    .quantityRejected(we.getBigDecimal("quantityRejected"))
+                    .fixedAssetId(we.getString("fixedAssetId"))
+                    .estimatedMilliSeconds(we.getDouble("estimatedMilliSeconds"))
+                    .estimatedSetupMillis(we.getDouble("estimatedSetupMillis"))
+                    .actualMilliSeconds(we.getDouble("actualMilliSeconds"))
+                    .actualSetupMillis(we.getDouble("actualSetupMillis"))
+                    .priority(we.getLong("priority"))
+                    .build();
+        } catch (GenericEntityException e) {
+            throw new RuntimeException("Error looking up WorkEffort: " + workEffortId, e);
+        }
+    }
+
+    @Override
+    public List<WorkEffortAssocData> getWorkEffortAssocs(String workEffortIdFrom,
+            String workEffortAssocTypeId) {
+        try {
+            Delegator delegator = dispatcher.getDelegator();
+            Map<String, Object> conditions = new HashMap<>();
+            conditions.put("workEffortIdFrom", workEffortIdFrom);
+            if (workEffortAssocTypeId != null) {
+                conditions.put("workEffortAssocTypeId", workEffortAssocTypeId);
+            }
+            List<GenericValue> assocs = EntityQuery.use(delegator).from("WorkEffortAssoc")
+                    .where(conditions).queryList();
+            List<WorkEffortAssocData> result = new ArrayList<>();
+            for (GenericValue assoc : assocs) {
+                result.add(new WorkEffortAssocData(
+                        assoc.getString("workEffortIdFrom"),
+                        assoc.getString("workEffortIdTo"),
+                        assoc.getString("workEffortAssocTypeId"),
+                        assoc.getTimestamp("fromDate"),
+                        assoc.getTimestamp("thruDate"),
+                        assoc.getLong("sequenceNum")));
+            }
+            return result;
+        } catch (GenericEntityException e) {
+            throw new RuntimeException("Error looking up WorkEffortAssoc for: " + workEffortIdFrom, e);
         }
     }
 }
