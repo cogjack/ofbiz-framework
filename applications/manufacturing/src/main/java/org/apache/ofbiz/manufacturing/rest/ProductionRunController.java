@@ -27,6 +27,7 @@ import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 import org.apache.ofbiz.base.util.Debug;
 import org.apache.ofbiz.base.util.UtilMisc;
@@ -299,7 +300,9 @@ public final class ProductionRunController {
      */
     private static GenericValue getAuthenticatedUser(HttpServletRequest request,
             HttpServletResponse response) throws IOException {
-        GenericValue userLogin = (GenericValue) request.getSession().getAttribute("userLogin");
+        HttpSession session = request.getSession(false);
+        GenericValue userLogin = session != null
+                ? (GenericValue) session.getAttribute("userLogin") : null;
         if (userLogin == null) {
             RestUtil.sendError(response, HttpServletResponse.SC_UNAUTHORIZED,
                     new ApiErrorResponse("UNAUTHORIZED",
