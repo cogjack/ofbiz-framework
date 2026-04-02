@@ -858,8 +858,9 @@ public class ProductionRunServices {
                     if (acctPrefs.getBaseCurrencyUomId() == null) {
                         return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingProductionRunUnableToFindCosts", locale));
                     }
-                    Map<String, Object> outputMap = dispatcher.runSync("getProductionRunCost", UtilMisc.<String, Object>toMap("userLogin", userLogin, "workEffortId",
-                            productionRunId));
+                    Map<String, Object> outputMap = dispatcher.runSync("getProductionRunCost",
+                            UtilMisc.<String, Object>toMap("userLogin", userLogin,
+                                    "workEffortId", productionRunId));
                     if (ServiceUtil.isError(outputMap)) {
                         return ServiceUtil.returnError(ServiceUtil.getErrorMessage(outputMap));
                     }
@@ -3138,8 +3139,8 @@ public class ProductionRunServices {
             }
             for (Map<String, Object> component : components) {
                 // get the component's standard cost
-                ProductCostResult compCostResult = productPort.getProductCost(
-                        ((GenericValue) component.get("product")).getString("productId"),
+                ProductCostResult compCostResult = productPort.getProductCost(((GenericValue) component
+                        .get("product")).getString("productId"),
                         inventoryItem.getString("currencyUomId"), "EST_STD");
                 BigDecimal componentCost = compCostResult.getProductCost();
 
