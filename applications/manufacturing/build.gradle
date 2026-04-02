@@ -1,0 +1,97 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+// Phase 1C: Manufacturing extracted as a separately-compilable Gradle module.
+// This build file declares manufacturing's explicit dependencies so that
+// `./gradlew :applications:manufacturing:compileJava` succeeds independently.
+//
+// Target dependency declarations (for when framework modules are fully extracted):
+//   implementation project(':framework:base')
+//   implementation project(':framework:entity')
+//   implementation project(':framework:service')
+//   implementation project(':framework:webapp')
+//   implementation project(':applications:datamodel')
+//
+// Do NOT add explicit dependencies on :applications:product, :applications:order,
+// :applications:workeffort, or :applications:accounting — those are accessed
+// exclusively through the port interfaces defined in src/api/java.
+
+plugins {
+    id 'java'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+// ── Source sets ─────────────────────────────────────────────────────────
+// api  – port interfaces and DTOs; other modules may depend on this
+//        without pulling in the full manufacturing implementation.
+// main – manufacturing services, BOM logic, MRP, and dispatcher-backed
+//        port implementations.
+sourceSets {
+    api {
+        java {
+            srcDirs = ['src/api/java']
+        }
+    }
+    main {
+        java {
+            srcDirs = ['src/main/java']
+        }
+        // Implementation code depends on the API classes
+        compileClasspath += sourceSets.api.output
+    }
+}
+
+// ── Dependencies ───────────────────────────────────────────────────────
+// Framework modules are not yet independently-compilable Gradle projects,
+// so we resolve their classes from the root project's compiled output as
+// a transitional bridge.  Once framework modules are extracted, these
+// file-based dependencies should be replaced with proper project deps.
+
+// Collect the root project's compile classpath files (resolved lazily)
+def rootClasses = { rootProject.sourceSets.main.output.classesDirs }
+def rootCompileClasspath = { rootProject.configurations.compileClasspath.resolve() }
+
+dependencies {
+    // API source set: port interfaces reference GenericValue and other
+    // entity/base types from the framework.
+    apiImplementation files(rootClasses)
+    apiImplementation files(rootCompileClasspath)
+
+    // Main source set: manufacturing implementation uses framework base,
+    // entity engine, service engine, and ICU4J (com.ibm.icu.util.Calendar).
+    implementation files(rootClasses)
+    implementation files(rootCompileClasspath)
+}
+
+// ── Task ordering ──────────────────────────────────────────────────────
+// The root project must compile first so framework classes are available.
+tasks.named('compileApiJava') {
+    dependsOn rootProject.tasks.named('compileJava')
+}
+tasks.named('compileJava') {
+    dependsOn tasks.named('compileApiJava')
+}

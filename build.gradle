@@ -285,6 +285,8 @@ sourceSets {
     main {
         java {
             srcDirs = getDirectoryInActiveComponentsIfExists('src/main/java')
+            // Phase 1C: manufacturing port interfaces / DTOs live in src/api/java
+            srcDirs += getDirectoryInActiveComponentsIfExists('src/api/java')
             exclude excludedJavaSources
         }
         groovy {
