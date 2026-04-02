@@ -65,9 +65,9 @@ import org.apache.ofbiz.manufacturing.ports.impl.DispatcherOrderPort;
 import org.apache.ofbiz.manufacturing.ports.impl.DispatcherProductPort;
 import org.apache.ofbiz.manufacturing.ports.impl.DispatcherWorkEffortPort;
 import org.apache.ofbiz.manufacturing.techdata.TechDataServices;
-import org.apache.ofbiz.product.config.ProductConfigWrapper;
-import org.apache.ofbiz.product.config.ProductConfigWrapper.ConfigOption;
-import org.apache.ofbiz.product.product.ProductWorker;
+import org.apache.ofbiz.manufacturing.ports.ProductConfiguration;
+import org.apache.ofbiz.manufacturing.ports.ProductConfigurationOption;
+import org.apache.ofbiz.manufacturing.ports.impl.ProductConfigWrapperAdapter;
 import org.apache.ofbiz.service.DispatchContext;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
@@ -2245,7 +2245,8 @@ public class ProductionRunServices {
         String facilityId = (String) context.get("facilityId");
         // Optional input fields
         String configId = (String) context.get("configId");
-        ProductConfigWrapper config = (ProductConfigWrapper) context.get("config");
+        Object rawConfig = context.get("config");
+        ProductConfiguration config = (rawConfig != null) ? new ProductConfigWrapperAdapter(rawConfig) : null;
         BigDecimal quantity = (BigDecimal) context.get("quantity");
         String orderId = (String) context.get("orderId");
         String orderItemSeqId = (String) context.get("orderItemSeqId");
@@ -2254,7 +2255,7 @@ public class ProductionRunServices {
             return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingConfigurationNotAvailable", locale));
         }
         if (config == null
-                || config == null && configId != null) {
+                || configId != null) {
             // TODO: load the configuration
             return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingProductionRunFromConfigurationNotYetImplemented",
                     locale));
@@ -2267,8 +2268,9 @@ public class ProductionRunServices {
         }
         String instanceProductId = null;
         try {
-            instanceProductId = ProductWorker.getAggregatedInstanceId(delegator, config.getProduct().getString("productId"), config.getConfigId());
-        } catch (Exception e) {
+            ProductPort prodPort = new DispatcherProductPort(dispatcher, userLogin);
+            instanceProductId = prodPort.getAggregatedInstanceId(config.getProductId(), config.getConfigId());
+        } catch (RuntimeException e) {
             return ServiceUtil.returnError(e.getMessage());
         }
 
@@ -2292,7 +2294,7 @@ public class ProductionRunServices {
         result.put("productionRunId", productionRunId);
 
         Map<String, BigDecimal> components = new HashMap<>();
-        for (ConfigOption co : config.getSelectedOptions()) {
+        for (ProductConfigurationOption co : config.getSelectedOptions()) {
             for (GenericValue selComponent : co.getComponents()) {
                 BigDecimal componentQuantity = null;
                 if (selComponent.get("quantity") != null) {

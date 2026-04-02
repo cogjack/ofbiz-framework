@@ -38,6 +38,9 @@ import org.apache.ofbiz.entity.GenericValue;
 import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.entity.util.EntityUtil;
 import org.apache.ofbiz.manufacturing.mrp.ProposedOrder;
+import org.apache.ofbiz.manufacturing.ports.ProductPort;
+import org.apache.ofbiz.manufacturing.ports.dto.ProductVariantResult;
+import org.apache.ofbiz.manufacturing.ports.impl.DispatcherProductPort;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
 import org.apache.ofbiz.service.ServiceUtil;
@@ -288,23 +291,17 @@ public class BOMNode {
                     }
 
                     if (!selectedFeatures.isEmpty()) {
-                        Map<String, Object> context = new HashMap<>();
-                        context.put("productId", node.get("productIdTo"));
-                        context.put("selectedFeatures", selectedFeatures);
-                        Map<String, Object> storeResult = null;
                         GenericValue variantProduct = null;
                         try {
-                            storeResult = dispatcher.runSync("getProductVariant", context);
-                            if (ServiceUtil.isError(storeResult)) {
-                                String errorMessage = ServiceUtil.getErrorMessage(storeResult);
-                                Debug.logError(errorMessage, MODULE);
-                                throw new GenericEntityException(errorMessage);
+                            ProductPort prodPort = new DispatcherProductPort(dispatcher, userLogin);
+                            ProductVariantResult variantResult = prodPort.getProductVariant(
+                                    (String) node.get("productIdTo"), selectedFeatures);
+                            java.util.List<String> variantProductIds = variantResult.getProductIds();
+                            if (variantProductIds.size() == 1) {
+                                variantProduct = EntityQuery.use(delegator).from("Product")
+                                        .where("productId", variantProductIds.get(0)).queryOne();
                             }
-                            List<GenericValue> variantProducts = UtilGenerics.cast(storeResult.get("products"));
-                            if (variantProducts.size() == 1) {
-                                variantProduct = variantProducts.get(0);
-                            }
-                        } catch (GenericServiceException e) {
+                        } catch (RuntimeException | GenericEntityException e) {
                             Debug.logError("Error calling getProductVariant service " + e.getMessage(), MODULE);
                         }
                         if (variantProduct != null) {

@@ -28,6 +28,7 @@ import org.apache.ofbiz.base.util.UtilGenerics;
 import org.apache.ofbiz.base.util.UtilMisc;
 import org.apache.ofbiz.entity.GenericValue;
 import org.apache.ofbiz.manufacturing.ports.ProductPort;
+import org.apache.ofbiz.product.product.ProductWorker;
 import org.apache.ofbiz.manufacturing.ports.dto.CostComponentCreatedResult;
 import org.apache.ofbiz.manufacturing.ports.dto.InventoryAvailableResult;
 import org.apache.ofbiz.manufacturing.ports.dto.InventoryItemCreatedResult;
@@ -292,6 +293,15 @@ public final class DispatcherProductPort implements ProductPort {
             return new ProductVariantResult(productIds);
         } catch (GenericServiceException e) {
             throw new RuntimeException("Error calling getProductVariant", e);
+        }
+    }
+
+    @Override
+    public String getAggregatedInstanceId(String productId, String configId) {
+        try {
+            return ProductWorker.getAggregatedInstanceId(dispatcher.getDelegator(), productId, configId);
+        } catch (Exception e) {
+            throw new RuntimeException("Error getting aggregated instance ID", e);
         }
     }
 

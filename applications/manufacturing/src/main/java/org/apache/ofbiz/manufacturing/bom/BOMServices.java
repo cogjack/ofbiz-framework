@@ -38,7 +38,11 @@ import org.apache.ofbiz.entity.Delegator;
 import org.apache.ofbiz.entity.GenericEntityException;
 import org.apache.ofbiz.entity.GenericValue;
 import org.apache.ofbiz.entity.util.EntityQuery;
-import org.apache.ofbiz.order.order.OrderReadHelper;
+import org.apache.ofbiz.manufacturing.ports.OrderHelper;
+import org.apache.ofbiz.manufacturing.ports.ProductPort;
+import org.apache.ofbiz.manufacturing.ports.dto.ShipmentPackageCreatedResult;
+import org.apache.ofbiz.manufacturing.ports.impl.DispatcherProductPort;
+import org.apache.ofbiz.manufacturing.ports.impl.OrderReadHelperAdapter;
 import org.apache.ofbiz.service.DispatchContext;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
@@ -530,11 +534,11 @@ public class BOMServices {
                 return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingPackageConfiguratorError", locale));
             }
             if (orderShipment != null && !orderReadHelpers.containsKey(orderShipment.getString("orderId"))) {
-                orderReadHelpers.put(orderShipment.getString("orderId"), new OrderReadHelper(delegator, orderShipment.getString("orderId")));
+                orderReadHelpers.put(orderShipment.getString("orderId"), new OrderReadHelperAdapter(delegator, orderShipment.getString("orderId")));
             }
-            OrderReadHelper orderReadHelper = null;
+            OrderHelper orderReadHelper = null;
             if (orderShipment != null) {
-                orderReadHelper = (OrderReadHelper) orderReadHelpers.get(orderShipment.getString("orderId"));
+                orderReadHelper = (OrderHelper) orderReadHelpers.get(orderShipment.getString("orderId"));
             }
             if (orderReadHelper != null) {
                 Map<String, Object> orderShipmentReadMap = UtilMisc.toMap("orderShipment", orderShipment, "orderReadHelper", orderReadHelper);
@@ -557,7 +561,7 @@ public class BOMServices {
             for (Map<String, Object> stringObjectMap : orderShipmentReadMapList) {
                 Map<String, Object> orderShipmentReadMap = UtilGenerics.cast(stringObjectMap);
                 GenericValue orderShipment = (GenericValue) orderShipmentReadMap.get("orderShipment");
-                OrderReadHelper orderReadHelper = (OrderReadHelper) orderShipmentReadMap.get("orderReadHelper");
+                OrderHelper orderReadHelper = (OrderHelper) orderShipmentReadMap.get("orderReadHelper");
                 GenericValue orderItem = orderReadHelper.getOrderItem(orderShipment.getString("orderItemSeqId"));
                 // getProductsInPackages
                 Map<String, Object> serviceContext = new HashMap<>();
@@ -598,7 +602,7 @@ public class BOMServices {
             for (Map<String, Object> objectMap : orderShipmentReadMapList) {
                 Map<String, Object> orderShipmentReadMap = UtilGenerics.cast(objectMap);
                 GenericValue orderShipment = (GenericValue) orderShipmentReadMap.get("orderShipment");
-                OrderReadHelper orderReadHelper = (OrderReadHelper) orderShipmentReadMap.get("orderReadHelper");
+                OrderHelper orderReadHelper = (OrderHelper) orderShipmentReadMap.get("orderReadHelper");
                 List<BOMNode> productsInPackages = UtilGenerics.cast(orderShipmentReadMap.get("productsInPackages"));
                 if (productsInPackages != null) {
                     // there are subcomponents:
@@ -722,41 +726,36 @@ public class BOMServices {
                         }
                         BigDecimal qty = (remQuantity.compareTo(maxQuantity) < 0 ? remQuantity : maxQuantity);
                         // If needed, create the package
+                        ProductPort prodPort = new DispatcherProductPort(dispatcher, userLogin);
                         if (shipmentPackageSeqId == null) {
                             try {
-                                Map<String, Object> serviceResult = dispatcher.runSync("createShipmentPackage",
-                                        UtilMisc.<String, Object>toMap("shipmentId", orderShipment.getString("shipmentId"), "shipmentBoxTypeId",
-                                                boxTypeId, "userLogin", userLogin));
-                                if (ServiceUtil.isError(serviceResult)) {
-                                    return ServiceUtil.returnError(ServiceUtil.getErrorMessage(serviceResult));
-                                }
-                                shipmentPackageSeqId = (String) serviceResult.get("shipmentPackageSeqId");
-                            } catch (GenericServiceException e) {
+                                ShipmentPackageCreatedResult pkgResult = prodPort.createShipmentPackage(
+                                        orderShipment.getString("shipmentId"), boxTypeId);
+                                shipmentPackageSeqId = pkgResult.shipmentPackageSeqId();
+                            } catch (RuntimeException e) {
                                 return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingPackageConfiguratorError", locale));
                             }
                             totalWidth = BigDecimal.ZERO;
                         }
                         try {
-                            Map<String, Object> inputMap = null;
                             if (subProduct) {
-                                inputMap = UtilMisc.toMap("shipmentId", orderShipment.getString("shipmentId"),
-                                        "shipmentPackageSeqId", shipmentPackageSeqId,
-                                        "shipmentItemSeqId", orderShipment.getString("shipmentItemSeqId"),
-                                        "subProductId", product.getString("productId"),
-                                        "userLogin", userLogin,
-                                        "subProductQuantity", qty);
+                                prodPort.createShipmentPackageContent(
+                                        orderShipment.getString("shipmentId"),
+                                        shipmentPackageSeqId,
+                                        orderShipment.getString("shipmentItemSeqId"),
+                                        null,
+                                        product.getString("productId"),
+                                        qty);
                             } else {
-                                inputMap = UtilMisc.toMap("shipmentId", orderShipment.getString("shipmentId"),
-                                        "shipmentPackageSeqId", shipmentPackageSeqId,
-                                        "shipmentItemSeqId", orderShipment.getString("shipmentItemSeqId"),
-                                        "userLogin", userLogin,
-                                        "quantity", qty);
+                                prodPort.createShipmentPackageContent(
+                                        orderShipment.getString("shipmentId"),
+                                        shipmentPackageSeqId,
+                                        orderShipment.getString("shipmentItemSeqId"),
+                                        qty,
+                                        null,
+                                        null);
                             }
-                            Map<String, Object> serviceResult = dispatcher.runSync("createShipmentPackageContent", inputMap);
-                            if (ServiceUtil.isError(serviceResult)) {
-                                return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingPackageConfiguratorError", locale));
-                            }
-                        } catch (GenericServiceException e) {
+                        } catch (RuntimeException e) {
                             return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingPackageConfiguratorError", locale));
                         }
                         totalWidth = totalWidth.add(qty.multiply(productDepth));
