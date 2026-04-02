@@ -259,20 +259,196 @@ Currently, manufacturing operations share transactions with WorkEffort and Produ
 | `createProductionRunTaskCosts` → `createCostComponent` (×5) | Single TX | **Saga:** Manufacturing records cost data, then calls Product API. Compensation: delete cost components if manufacturing update fails. |
 | `quickRunProductionRunTask` → `issueInventory` + `updateWorkEffort` + `produce` | Single TX | **Orchestrated saga** with compensation for each step. |
 
-### 4.8 Implementation Roadmap
+### 4.8 Implementation Roadmap (Sub-Phases)
 
-| Step | Description | Effort | Risk |
-|------|-------------|--------|------|
-| 1 | Define `WorkEffortPort`, `ProductPort`, `OrderPort` interfaces in manufacturing | 1 week | Low |
-| 2 | Implement interfaces using current ServiceDispatcher (no behavior change) | 1 week | Low |
-| 3 | Extract manufacturing into a separate Gradle module with defined API | 2 weeks | Medium |
-| 4 | Replace SECA triggers with event bus subscriptions | 2 weeks | Medium |
-| 5 | Implement REST/gRPC endpoints for manufacturing's public API | 1 week | Low |
-| 6 | Switch port implementations to REST/gRPC clients | 2 weeks | High |
-| 7 | Migrate manufacturing entities to separate database schema | 2 weeks | High |
-| 8 | Integration testing and cutover | 2 weeks | High |
+Phase 1 is broken into **7 sub-phases**, each with explicit entry/exit criteria, a human verification checkpoint, and gates for unclear spec decisions.
 
-**Estimated total: 13 weeks** for full extraction.
+---
+
+#### Sub-Phase 1A: Port Interface Definition (1 week)
+
+**Goal:** Define anti-corruption-layer interfaces (`WorkEffortPort`, `ProductPort`, `OrderPort`, `AccountingPort`) inside the manufacturing module that abstract all outbound cross-domain calls.
+
+**Tasks:**
+1. Create a `ports/` package under `applications/manufacturing/src/main/java/org/apache/ofbiz/manufacturing/ports/`.
+2. For each of the 64 outbound dispatcher calls (Section 4.3), define a method on the corresponding port interface. Group by domain:
+   - `WorkEffortPort`: 12 methods (create, update, associate work efforts; create time entries/notes; assign parties; record produced inventory).
+   - `ProductPort`: 13 methods (inventory queries, cost components, inventory items, lots, shipment packages, product variants).
+   - `OrderPort`: 2 methods (create/update requirements).
+   - `AccountingPort`: 1 method (get accounting preferences).
+3. Define DTOs for cross-domain data returned by port methods — do NOT import classes from other modules in the interface definitions.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **WorkEffort shared kernel vs. internalization:** Should manufacturing retain WorkEffort as its persistence model (Option A, Section 4.3.1) or create its own production-run entity model (Option B)? This decision fundamentally shapes the port interfaces. **Recommend: present both options to stakeholders with LOE estimates before committing.**
+- ❓ **DTO granularity:** Should port methods return full entity-equivalent DTOs or minimal projections? Full DTOs are easier to implement but leak domain model details.
+
+> **🔲 CHECKPOINT 1A — Human Review Required**
+> - [ ] Port interfaces reviewed by architect for completeness (all 64 calls accounted for)
+> - [ ] WorkEffort shared-kernel decision made and documented
+> - [ ] DTO design approved (full vs. projection)
+> - [ ] No `import org.apache.ofbiz.{product|order|workeffort|accounting}.*` in interface definitions
+
+**Exit criteria:** All port interfaces compile. No production code changes yet.
+
+---
+
+#### Sub-Phase 1B: Dispatcher-Backed Port Implementation (1 week)
+
+**Goal:** Implement each port interface using the existing `ServiceDispatcher` — a pure refactor with zero behavior change.
+
+**Tasks:**
+1. Create `impl/` package with `DispatcherWorkEffortPort`, `DispatcherProductPort`, `DispatcherOrderPort`, `DispatcherAccountingPort`.
+2. Each implementation wraps the existing `dispatcher.runSync("serviceName", ctx)` call pattern.
+3. Refactor all 64 call sites in manufacturing Java code to use the port interface instead of direct dispatcher calls.
+4. Replace the 11 cross-module Java imports (Section 4.6) with port-mediated access or local DTOs.
+
+**Verification:**
+- Run full OFBiz test suite — zero behavior change expected.
+- Run manufacturing-specific tests to confirm production run lifecycle works.
+
+> **🔲 CHECKPOINT 1B — Human Review Required**
+> - [ ] All existing unit and integration tests pass (no regressions)
+> - [ ] Manual smoke test: create a production run, run MRP, produce inventory — all work as before
+> - [ ] Code review confirms no direct `dispatcher.runSync` calls remain in manufacturing Java code (except through port implementations)
+> - [ ] No new cross-module imports introduced
+
+**Exit criteria:** Manufacturing code uses ports exclusively. All tests green. Behavior identical to pre-refactor.
+
+---
+
+#### Sub-Phase 1C: Gradle Module Extraction (2 weeks)
+
+**Goal:** Extract manufacturing into a separate Gradle sub-project with an explicit dependency declaration.
+
+**Tasks:**
+1. Create `applications/manufacturing/build.gradle` with explicit `implementation project(':applications:workeffort')`, etc.
+2. Move port interfaces into a separate `manufacturing-api` module (or a `ports` source set) so other modules can depend on manufacturing's API without depending on its implementation.
+3. Ensure manufacturing's `servicedef/`, `entitydef/`, `webapp/`, and `config/` resources are bundled with the module.
+4. Fix any compile errors from implicit classpath dependencies that were previously resolved by the flat monolith classpath.
+5. Audit Groovy files in manufacturing for cross-domain calls not captured in the Java analysis (Risk #5 from Section 8).
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Module packaging:** Should the extracted module be a JAR (library) or a WAR (deployable)? JAR is simpler for Phase 1; WAR needed for independent deployment later.
+- ❓ **Shared framework dependency:** How should manufacturing depend on `framework/*` modules (entity engine, service engine)? Direct dependency or via a `framework-api` abstraction?
+
+> **🔲 CHECKPOINT 1C — Human Review Required**
+> - [ ] `./gradlew :applications:manufacturing:build` succeeds independently
+> - [ ] Full `./gradlew test` passes across all modules
+> - [ ] Dependency graph review: no circular dependencies, manufacturing depends only on declared modules
+> - [ ] Groovy/mini-lang audit results reviewed — any newly discovered cross-domain calls documented
+> - [ ] Module packaging decision made (JAR vs. WAR)
+
+**Exit criteria:** Manufacturing compiles and tests as a separate Gradle module. Dependency graph is explicit and acyclic.
+
+---
+
+#### Sub-Phase 1D: Event Bus Infrastructure + SECA Migration (2 weeks)
+
+**Goal:** Stand up the event bus infrastructure and convert the 6 inbound SECA triggers (Section 4.4.2) to event-bus subscriptions.
+
+**Tasks:**
+1. **Event bus setup:** Deploy message broker (Kafka or RabbitMQ). Create topics for initial events: `RequirementCreated`, `RequirementUpdated`, `ProductAssocDeleted`, `ShipmentReceiptCreated`.
+2. **Publisher side:** Add event publishing to the trigger services in Order and Product modules:
+   - `createRequirement` → publish `RequirementCreated`
+   - `updateRequirement` → publish `RequirementUpdated`
+   - `deleteProductAssoc` → publish `ProductAssocDeleted`
+   - `createShipmentReceipt` → publish `ShipmentReceiptCreated`
+3. **Subscriber side:** Manufacturing subscribes to these events and invokes the same actions that the SECAs currently trigger (`createProductionRunFromRequirement`, `updateLowLevelCode`, `checkDecomposeInventoryItem`).
+4. **Dual-run period:** Keep SECAs active alongside event-bus subscribers with idempotency guards. Verify both paths produce identical results.
+5. **Disable SECAs:** Once validated, remove the cross-domain SECA entries from `manufacturing/servicedef/secas.xml` and `product/servicedef/secas_shipment.xml`.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Broker choice:** Kafka vs. RabbitMQ? Kafka provides ordered replay but requires more operational overhead. RabbitMQ is simpler but lacks replay.
+- ❓ **Event schema format:** Avro, Protobuf, or JSON? JSON is simplest to start; Avro/Protobuf enable schema evolution.
+- ❓ **Consistency model:** Current SECAs run synchronously within the same transaction. Moving to async means eventual consistency. Is this acceptable for `createProductionRunFromRequirement` (which currently runs in the same TX as `createRequirement`)?
+
+> **🔲 CHECKPOINT 1D — Human Review Required**
+> - [ ] Event bus is operational (health checks, topic creation verified)
+> - [ ] Dual-run validation: for each of the 6 SECA triggers, confirm that the event-bus subscriber produces the same outcome as the SECA
+> - [ ] Consistency model reviewed and accepted by business stakeholders (sync → eventual consistency tradeoff)
+> - [ ] SECA removal diff reviewed — only cross-domain SECAs removed, internal manufacturing SECAs (`createBOMAssoc` → `updateLowLevelCode`) remain
+> - [ ] Dead-letter queue monitoring in place for failed events
+
+**Exit criteria:** All 6 cross-domain SECA triggers replaced by event-bus subscriptions. SECAs disabled. Manufacturing reacts to domain events correctly.
+
+---
+
+#### Sub-Phase 1E: Manufacturing Public REST API (1 week)
+
+**Goal:** Expose manufacturing's 81 services as a versioned REST API for external callers.
+
+**Tasks:**
+1. Define REST endpoints for the 3 inbound dispatcher calls (Section 4.4.1):
+   - `POST /api/v1/manufacturing/production-runs` (replaces `createProductionRun`, `createProductionRunFromConfiguration`)
+   - `POST /api/v1/manufacturing/production-runs/marketing-package` (replaces `createProductionRunForMktgPkg`)
+2. Implement thin REST controllers that delegate to the existing service implementations.
+3. Add OpenAPI/Swagger documentation.
+4. Implement request/response DTOs (not raw OFBiz Map parameters).
+
+> **🔲 CHECKPOINT 1E — Human Review Required**
+> - [ ] API design review: REST endpoints follow conventions, request/response schemas documented
+> - [ ] OpenAPI spec reviewed by API consumers (Order team)
+> - [ ] Integration test: Order module can call manufacturing REST API and get correct responses
+> - [ ] Auth/authz: API endpoints enforce the same permissions as the current dispatcher calls
+
+**Exit criteria:** Manufacturing has a functional REST API. Order module has been tested calling it (but still uses dispatcher in production).
+
+---
+
+#### Sub-Phase 1F: Cut Over Order→Manufacturing to REST (2 weeks)
+
+**Goal:** Switch the 3 inbound dispatcher calls from Order to use the REST API instead of in-process dispatch.
+
+**Tasks:**
+1. Modify Order's `CheckOutHelper.java:753` to call manufacturing REST endpoint instead of `dispatcher.runSync("createProductionRunFromConfiguration", ...)`.
+2. Modify Order's `OrderServices.java:1359, :1460` to call manufacturing REST endpoint instead of `dispatcher.runSync("createProductionRunForMktgPkg", ...)`.
+3. Implement circuit breaker and retry logic for the REST calls.
+4. **Feature flag:** Gate the REST path behind a feature flag so it can be toggled back to dispatcher in production if issues arise.
+5. Switch manufacturing's outbound port implementations from `DispatcherXxxPort` to `RestXxxPort` (calls Product, WorkEffort, Order, Accounting via REST).
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Transaction semantics:** The current `createProductionRunFromConfiguration` runs in the same transaction as order checkout. After extraction, this becomes a distributed call. What happens if manufacturing fails after order is committed? Need saga/compensation or accept the risk?
+- ❓ **Latency budget:** How much additional latency from the REST call is acceptable in the checkout flow?
+
+> **🔲 CHECKPOINT 1F — Human Review Required**
+> - [ ] Feature flag tested: both dispatcher and REST paths work
+> - [ ] Load testing: REST path meets latency requirements under expected load
+> - [ ] Failure testing: circuit breaker triggers correctly when manufacturing service is down
+> - [ ] Saga/compensation design reviewed for checkout→production-run flow
+> - [ ] Staging environment validation: full order→production flow works end-to-end via REST
+
+**Exit criteria:** Order→Manufacturing communication works via REST in staging. Feature flag allows instant rollback.
+
+---
+
+#### Sub-Phase 1G: Database Schema Separation + Production Cutover (2 weeks)
+
+**Goal:** Migrate manufacturing entities to a separate database schema and complete the extraction.
+
+**Tasks:**
+1. Create a `manufacturing` schema in the database.
+2. Migrate manufacturing-owned entities (8 entities: `TechDataCalendar*`, `MrpEvent*`, `ProductManufacturingRule`) to the new schema.
+3. Update manufacturing's `entitydef/` to point to the new schema.
+4. Replace manufacturing's remaining direct entity reads of cross-domain entities (109 accesses, Section 4.5) with port-mediated API calls.
+5. Create read-model replicas for high-frequency cross-domain reads (e.g., `Product`, `WorkEffort` data needed for BOM traversal).
+6. Production cutover: enable the REST path feature flag in production, monitor for 1 week.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Entity ownership clarity:** Some entities like `TechDataCalendarExcDay` are accessed by Order (Section 3.1). After migration, Order needs to call manufacturing's API for this data. Confirm this is acceptable.
+- ❓ **Read-model freshness:** How stale can replicated Product/WorkEffort data be? Real-time (event-driven) vs. periodic sync?
+- ❓ **Rollback plan:** If issues arise in production, what is the rollback procedure? Feature flag covers API calls, but schema migration needs a separate rollback plan.
+
+> **🔲 CHECKPOINT 1G — Human Review Required (Production Go/No-Go)**
+> - [ ] Schema migration tested in staging — all manufacturing functions work against new schema
+> - [ ] Read-model replication validated — BOM traversal performance acceptable
+> - [ ] Rollback plan documented and tested
+> - [ ] Production monitoring dashboards in place (error rates, latency, event processing lag)
+> - [ ] 1-week bake period in production with feature flag — no incidents
+> - [ ] **Sign-off from engineering lead and product owner to declare Phase 1 complete**
+
+**Exit criteria:** Manufacturing runs as a separable module in production. All cross-domain communication is via APIs and events. Feature flag removed after bake period.
+
+**Estimated total: 11 weeks development + 1 week bake = ~12 weeks** for full Phase 1 extraction.
 
 ---
 
@@ -382,20 +558,193 @@ updateShipment (status=SHIPMENT_SHIPPED, type=PURCHASE_RETURN)
 2. Order's invoice creation calls should become **events** (`OrderCompleted`, `ReturnApproved`) that Accounting subscribes to.
 3. Order's entity reads of billing/payment data should go through an **Accounting Query API**.
 
-### 5.5 Implementation Roadmap
+### 5.5 Implementation Roadmap (Sub-Phases)
 
-| Step | Description | Effort | Risk |
-|------|-------------|--------|------|
-| 1 | Convert ledger SECAs to event bus subscribers (using infrastructure from Phase 1) | 3 weeks | Medium |
-| 2 | Convert shipment→invoice SECA chain to events | 2 weeks | High |
-| 3 | Define Accounting Query API for order/product entity access | 2 weeks | Medium |
-| 4 | Break accounting→order dispatcher calls (billing write-backs → events) | 3 weeks | High |
-| 5 | Define Payment Gateway Port in order module | 1 week | Low |
-| 6 | Break order→accounting dispatcher calls (payment/invoice → port + events) | 3 weeks | High |
-| 7 | Migrate accounting entities to separate schema | 3 weeks | High |
-| 8 | Integration testing | 3 weeks | High |
+Phase 2 is broken into **8 sub-phases**. This phase is significantly harder than Phase 1 due to bidirectional coupling and the financial-correctness requirements of accounting.
 
-**Estimated total: 20 weeks** for full isolation.
+---
+
+#### Sub-Phase 2A: Ledger SECA → Event Bus Migration (3 weeks)
+
+**Goal:** Convert the 10 cross-domain ledger SECAs (Section 5.2) from synchronous SECA triggers to event-bus subscriptions.
+
+**Tasks:**
+1. Add event publishing to the 10 trigger services in Product and WorkEffort modules (e.g., `createItemIssuance` publishes `ItemIssued` event).
+2. Create accounting event subscribers that invoke the same GL-posting logic (e.g., `ItemIssued` → `createAcctgTransForSalesShipmentIssuance`).
+3. Dual-run with idempotency: run both SECA and event subscriber in parallel, verify GL entries match.
+4. Disable ledger SECAs after validation.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **GL consistency:** Current ledger SECAs run synchronously within the committing transaction, guaranteeing that every inventory change has a corresponding GL entry. Moving to async means GL entries could lag. Is eventual consistency acceptable for GL postings? **This is a critical business decision — may require CFO/finance stakeholder input.**
+- ❓ **Reconciliation:** If events are processed out of order or duplicated, GL entries could be incorrect. What reconciliation process is needed?
+- ❓ **Audit trail:** Current SECAs leave no trace of the coupling. Events provide better auditability, but the transition period needs careful logging.
+
+> **🔲 CHECKPOINT 2A — Human Review Required**
+> - [ ] Dual-run results: GL entries from SECA path match event-bus path for all 10 trigger types
+> - [ ] Finance/accounting stakeholder sign-off on eventual consistency for GL postings
+> - [ ] Reconciliation process documented and tested
+> - [ ] Event ordering verified: GL entries created in correct chronological order
+> - [ ] Dead-letter monitoring: no events stuck in DLQ after 48-hour test run
+
+---
+
+#### Sub-Phase 2B: Shipment→Invoice SECA Chain Migration (2 weeks)
+
+**Goal:** Convert the 7-variant shipment→invoice SECA chain (Section 5.3) to event-driven flow.
+
+**Tasks:**
+1. Product publishes `ShipmentStatusChanged` event with `{shipmentId, shipmentTypeId, statusId}` payload.
+2. Accounting subscribes and routes to the correct invoice-creation service based on shipment type and status:
+   - SALES_SHIPMENT + PACKED → `createInvoicesFromShipment` + `setInvoicesToReadyFromShipment`
+   - PURCHASE_SHIPMENT + RECEIVED → `createInvoicesFromShipment`
+   - DROP_SHIPMENT + SHIPPED → `createInvoicesFromShipment`
+   - DROP_SHIPMENT + RECEIVED → `createSalesInvoicesFromDropShipment`
+   - SALES_RETURN + RECEIVED → `createInvoicesFromReturnShipment`
+   - PURCHASE_RETURN + SHIPPED → `createInvoicesFromReturnShipment`
+3. Dual-run validation for each of the 7 variants.
+4. Disable shipment SECAs in `product/servicedef/secas_shipment.xml`.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Invoice timing:** Currently, invoices are created synchronously when shipment status changes. If the event bus introduces delay, customers could see shipment confirmations before invoices exist. Is this acceptable? What is the maximum acceptable delay?
+- ❓ **SHIPMENT_PICKED vs. SHIPMENT_PACKED:** Both trigger `createInvoicesFromShipment` for SALES_SHIPMENT. Is this intentional (idempotent) or a bug in the current SECA config? Need clarification before migrating.
+
+> **🔲 CHECKPOINT 2B — Human Review Required**
+> - [ ] All 7 shipment→invoice variants validated via dual-run
+> - [ ] Invoice timing requirements confirmed with business stakeholders
+> - [ ] PICKED/PACKED double-trigger question resolved
+> - [ ] End-to-end test: create sales order → ship → verify invoice auto-created via event bus
+
+---
+
+#### Sub-Phase 2C: Accounting Query API (2 weeks)
+
+**Goal:** Create a read-only API that other modules use to query accounting data, replacing direct entity access.
+
+**Tasks:**
+1. Define REST endpoints for accounting data that other modules currently read via entity access:
+   - `GET /api/v1/accounting/billing-accounts/{id}` (used by Order: 3 entity accesses)
+   - `GET /api/v1/accounting/payment-methods/{id}` (used by Order: 3 entity accesses)
+   - `GET /api/v1/accounting/party-accounting-preferences/{partyId}` (used by Manufacturing, Order)
+   - `GET /api/v1/accounting/fin-accounts/{id}` (used by Order: 2 entity accesses)
+2. Create DTOs for each endpoint response.
+3. Update Order module to call Accounting Query API instead of reading accounting entities directly (24 entity accesses, Section 5.4.1).
+4. Update Manufacturing to use the API for `RateAmount` lookups (2 entity accesses, Section 4.5).
+
+> **🔲 CHECKPOINT 2C — Human Review Required**
+> - [ ] API design review: all 17 accounting entity types accessed by Order are covered
+> - [ ] Performance test: API response times acceptable vs. direct entity reads
+> - [ ] No direct reads of accounting-owned entities remain in Order or Manufacturing code
+
+---
+
+#### Sub-Phase 2D: Break Accounting→Order Coupling (3 weeks)
+
+**Goal:** Eliminate accounting's 19 dispatcher calls to order services and 49 entity accesses to order data.
+
+**Tasks:**
+1. **Billing write-backs (6 calls):** Convert `createOrderItemBilling`, `createOrderAdjustmentBilling`, `createReturnItemBilling` to events. Accounting publishes `InvoiceLineCreated`; Order subscribes to create billing records.
+2. **Return management (6 calls):** Convert `createReturnHeader`, `createReturnItem`, `updateReturnHeader` calls in `GiftCertificateServices.java` and `FinAccountServices.java` to an Order Command API (`POST /api/v1/order/returns`).
+3. **Payment-from-preference (3 calls):** Convert `createPaymentFromPreference` in payment gateway handlers to an event: Accounting publishes `PaymentReceived`; Order subscribes to update preference.
+4. **Order confirmation (2 calls):** Convert `sendOrderConfirmation` to an event: Accounting publishes `PaymentConfirmed`; Order subscribes to send notification.
+5. **Entity access replacement:** Create an Order Query API for accounting's 49 entity reads (OrderHeader, OrderItem, ReturnHeader, etc.).
+6. **Import elimination:** Replace 29 imports of `OrderReadHelper`, `ShoppingCart`, etc. with local adapters backed by the Order Query API.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Return creation from accounting:** Currently, gift certificate and financial account services create returns directly. After decoupling, should accounting still be able to initiate returns, or should this be a manual process handled in the Order module?
+- ❓ **Payment gateway integration ownership:** WorldPay and PayPal event handlers live in Accounting but call Order services. Should these handlers move to Order, or should they stay in Accounting and use the Order Command API?
+
+> **🔲 CHECKPOINT 2D — Human Review Required**
+> - [ ] Return-creation ownership decision documented
+> - [ ] Payment gateway handler ownership decision documented
+> - [ ] All 19 accounting→order dispatcher calls eliminated
+> - [ ] OrderReadHelper no longer imported by accounting code
+> - [ ] Integration test: full invoice lifecycle (create invoice, apply to order, post to GL) works end-to-end
+
+---
+
+#### Sub-Phase 2E: Payment Gateway Port in Order (1 week)
+
+**Goal:** Abstract Order's 30 outbound calls to accounting payment services behind a `PaymentGatewayPort` interface.
+
+**Tasks:**
+1. Define `PaymentGatewayPort` in Order module with methods for: `authorizePayment`, `capturePayment`, `refundPayment`, `releasePayment`, `createGiftCard`, `calcBillingAccountBalance`, `calcTax`, `createInvoice`, `createPayment`, `createFinAccount`, etc.
+2. Implement `DispatcherPaymentGatewayPort` using current ServiceDispatcher (no behavior change).
+3. Refactor all 30 call sites in Order to use the port.
+
+> **🔲 CHECKPOINT 2E — Human Review Required**
+> - [ ] Port interface covers all 30 order→accounting dispatcher calls
+> - [ ] All existing tests pass (zero behavior change)
+> - [ ] No direct `dispatcher.runSync` calls to accounting services remain in Order code
+
+---
+
+#### Sub-Phase 2F: Break Order→Accounting Coupling (3 weeks)
+
+**Goal:** Switch Order's `PaymentGatewayPort` from dispatcher-backed to REST/event-backed.
+
+**Tasks:**
+1. **Payment auth/capture (synchronous, latency-sensitive):** Implement `RestPaymentGatewayPort` calling Accounting's REST API for `authOrderPayments`, `processAuthResult`, `processCaptureResult`.
+2. **Invoice creation (can be async):** Convert `createInvoiceForOrder` (3 calls) and `createInvoiceFromReturn` to events: Order publishes `OrderApproved` / `ReturnApproved`; Accounting subscribes.
+3. **SECA migration:** Convert the 5 order→accounting SECAs (`changeOrderStatus` → `releaseOrderPayments`, `createInvoiceFromOrder`, `createPaymentFromOrder`) to events.
+4. **Entity access replacement:** Order calls Accounting Query API (from 2C) instead of reading billing/payment entities directly.
+5. Feature-flag the REST/event path for rollback capability.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Checkout latency:** Payment authorization is on the critical checkout path. REST call to accounting adds latency. What is the maximum acceptable checkout time? Should we consider keeping payment auth as a shared-kernel synchronous call?
+- ❓ **Payment release timing:** `releaseOrderPayments` currently fires synchronously on `changeOrderStatus`. If async, a canceled order's payment hold could linger. Acceptable delay?
+
+> **🔲 CHECKPOINT 2F — Human Review Required**
+> - [ ] Checkout performance test: payment auth via REST within latency budget
+> - [ ] All 5 order→accounting SECAs converted to events
+> - [ ] Feature flag tested: both dispatcher and REST/event paths work
+> - [ ] End-to-end test: place order → pay → ship → invoice → GL posting, all via APIs/events
+> - [ ] Payment release timing validated with business stakeholders
+
+---
+
+#### Sub-Phase 2G: Accounting Schema Separation (3 weeks)
+
+**Goal:** Migrate accounting's 200 entities to a separate database schema.
+
+**Tasks:**
+1. Create `accounting` schema.
+2. Migrate accounting-owned entities (200 from `accounting-entitymodel.xml`).
+3. Replace remaining cross-domain entity reads with API calls.
+4. Update view entities that span accounting and other domains — replace with API-composed queries.
+5. Remove cross-schema foreign keys; implement application-level referential integrity.
+
+> **🔲 CHECKPOINT 2G — Human Review Required**
+> - [ ] Schema migration validated in staging
+> - [ ] All cross-domain view entities replaced or decomposed
+> - [ ] No direct SQL joins between accounting and other schemas
+> - [ ] Data integrity checks: no orphaned records after migration
+
+---
+
+#### Sub-Phase 2H: Integration Testing + Production Cutover (3 weeks)
+
+**Goal:** Comprehensive validation and production deployment.
+
+**Tasks:**
+1. **Contract testing:** Implement Pact contract tests between Order↔Accounting and Product↔Accounting.
+2. **End-to-end regression:** Full business cycle testing:
+   - Sales order → payment auth → shipment → invoice → GL posting → payment capture
+   - Purchase order → receipt → invoice → payment → GL posting
+   - Return → refund → credit memo → GL reversal
+3. **Performance testing:** Verify no degradation in transaction throughput.
+4. **Chaos testing:** Kill accounting service; verify Order handles it gracefully (circuit breaker, retries).
+5. **Production deployment:** Feature flags enabled, 2-week bake period.
+
+> **🔲 CHECKPOINT 2H — Human Review Required (Production Go/No-Go)**
+> - [ ] All contract tests pass
+> - [ ] End-to-end regression: all 3 business cycle tests pass
+> - [ ] Performance within 10% of pre-decoupling baseline
+> - [ ] Chaos testing: Order survives accounting outage gracefully
+> - [ ] Rollback plan tested
+> - [ ] 2-week bake period with zero critical incidents
+> - [ ] **Sign-off from engineering lead, finance stakeholder, and product owner**
+
+**Estimated total: 20 weeks development + 2 weeks bake = ~22 weeks** for full Phase 2 isolation.
 
 ---
 
@@ -440,20 +789,214 @@ The 244-point coupling between Order and Product is the single largest coupling 
 2. **Inventory reservation becomes event-driven:** Order publishes `OrderPlaced` event; Product subscribes to reserve inventory. Product publishes `InventoryReserved`/`ReservationFailed` events.
 3. **Shipment receipt → order status updates become events:** Product publishes `ShipmentReceiptCreated`; Order subscribes to update return/order statuses.
 
-### 6.3 Implementation Roadmap
+### 6.3 Implementation Roadmap (Sub-Phases)
 
-| Step | Description | Effort | Risk |
-|------|-------------|--------|------|
-| 1 | Define Product Catalog API (pricing, availability, product data) | 3 weeks | Medium |
-| 2 | Replace ShoppingCart product imports with API-backed adapters | 4 weeks | Very High |
-| 3 | Convert inventory reservation to event-driven flow | 3 weeks | High |
-| 4 | Convert shipment/receipt → order SECAs to events | 2 weeks | Medium |
-| 5 | Break order→party coupling (Query API for contact/party data) | 2 weeks | Medium |
-| 6 | Break remaining order→accounting coupling (using Phase 2 infrastructure) | 1 week | Low |
-| 7 | Migrate order entities to separate schema | 3 weeks | High |
-| 8 | Integration testing and saga implementation | 4 weeks | Very High |
+Phase 3 is the hardest extraction due to the 244-point order→product coupling (the largest in the system). It is broken into **9 sub-phases** with aggressive checkpointing.
 
-**Estimated total: 22 weeks** for full extraction.
+---
+
+#### Sub-Phase 3A: Product Catalog Read API (3 weeks)
+
+**Goal:** Create a comprehensive read-only Product API that Order will use instead of direct entity access and class imports.
+
+**Tasks:**
+1. Define REST endpoints covering the 29 unique product entities Order accesses (93 accesses total):
+   - `GET /api/v1/product/products/{id}` (pricing, associations, features)
+   - `GET /api/v1/product/inventory/available` (replaces `getProductInventoryAvailable`, `isStoreInventoryAvailableOrNotRequired`)
+   - `GET /api/v1/product/pricing/calculate` (replaces `calculateProductPrice`, `calculatePurchasePrice`)
+   - `GET /api/v1/product/stores/{id}` (ProductStore, ProductStoreEmailSetting)
+   - `GET /api/v1/product/shipment-methods` (CarrierShipmentMethod)
+   - `GET /api/v1/product/promos` (ProductPromo, ProductPromoCode)
+2. Create response DTOs for each endpoint.
+3. Performance-test the API against the entity-read patterns it replaces.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **API surface area:** 29 entity types is a large API surface. Should we group these into coarser resources (e.g., a "product detail" endpoint that returns pricing + features + inventory in one call) to reduce HTTP round-trips?
+- ❓ **Promo evaluation:** `ProductPromo` logic is deeply intertwined with `ShoppingCart`. Should promo evaluation stay in Order (with product data fetched via API) or move to Product (with cart data passed as input)?
+
+> **🔲 CHECKPOINT 3A — Human Review Required**
+> - [ ] API design review: covers all 29 entity types and 37 dispatcher calls Order makes to Product
+> - [ ] Promo evaluation ownership decided
+> - [ ] Performance: API response times comparable to direct entity reads for key flows (cart add, checkout)
+> - [ ] OpenAPI spec reviewed by Order team
+
+---
+
+#### Sub-Phase 3B: ShoppingCart Adapter Layer (4 weeks)
+
+**Goal:** Replace the 106 direct product imports in Order code with adapter-mediated access.
+
+**Tasks:**
+1. Create adapter interfaces in Order for each imported Product class:
+   - `ProductCatalogAdapter` (replaces `CatalogWorker`, `ProductWorker`, `ProductStoreWorker`)
+   - `ProductConfigAdapter` (replaces `ProductConfigWorker`, `ProductConfigWrapper`)
+   - `ShipmentAdapter` (replaces `ShipmentReadHelper`, `ShipmentCostEstimate`)
+2. Implement adapters using the Product Catalog API from Sub-Phase 3A.
+3. Refactor `ShoppingCart.java`, `ShoppingCartItem.java`, `CheckOutHelper.java`, and all other Order files that import product classes.
+4. This is the highest-risk refactor in the entire plan — `ShoppingCartItem` alone has 40+ product imports.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **ShoppingCartItem coupling:** `ShoppingCartItem` constructs `ProductConfigWrapper` instances and calls methods on them directly. This is deep coupling, not just data access. Should we:
+  - (A) Move `ProductConfigWrapper` to a shared library (quickest, but defers decoupling), or
+  - (B) Create a `ProductConfigurationService` in Product that Order calls via API (clean, but requires major refactor of cart logic), or
+  - (C) Duplicate the `ProductConfigWrapper` logic in Order temporarily (technical debt, but unblocks extraction)?
+- ❓ **Performance budget:** Cart operations currently do many small entity reads (per-item pricing, per-item inventory checks). Batching these into fewer API calls will require significant refactoring of cart logic. What is the acceptable performance overhead?
+
+> **🔲 CHECKPOINT 3B — Human Review Required**
+> - [ ] ShoppingCartItem coupling approach decided (Option A, B, or C)
+> - [ ] All 106 product imports eliminated from Order code
+> - [ ] Cart performance test: add item, update quantity, checkout — all within latency budget
+> - [ ] Full Order test suite passes
+> - [ ] Manual smoke test: complete checkout flow with configurable products works correctly
+
+---
+
+#### Sub-Phase 3C: Inventory Reservation Event Flow (3 weeks)
+
+**Goal:** Convert inventory reservation from synchronous SECA-triggered to event-driven.
+
+**Tasks:**
+1. Order publishes `OrderPlaced` event with item details and facility preferences.
+2. Product subscribes, reserves inventory, publishes `InventoryReserved` or `ReservationFailed`.
+3. Order subscribes to reservation results and updates order status accordingly.
+4. Convert SECAs:
+   - `storeOrder` → `balanceOrderItemsWithNegativeReservations` (product) → event
+   - `storeOrder` → `setOrderReservationPriority` (product) → event
+   - `changeOrderItemStatus` → `cancelOrderInventoryReservation` (product) → event
+5. Implement compensation: if reservation fails after order is created, trigger order hold/notification.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Reservation atomicity:** Currently, `storeOrder` and `reserveStoreInventory` run in one transaction. If reservation fails, the order is not created. With events, the order is created first, then reservation is attempted asynchronously. This changes the user experience: the customer sees "order placed" but reservation might fail later. Is this acceptable? Should we keep reservation synchronous (API call, not event)?
+- ❓ **Overselling risk:** Async reservation introduces a window where inventory could be oversold. What is the tolerance for overselling?
+
+> **🔲 CHECKPOINT 3C — Human Review Required**
+> - [ ] Reservation atomicity decision made and documented
+> - [ ] Overselling risk assessment completed and accepted by business
+> - [ ] Event flow validated: order → reserve → success/failure → order status update
+> - [ ] Compensation flow tested: reservation failure triggers appropriate order hold
+> - [ ] Load test: concurrent orders don't cause reservation race conditions
+
+---
+
+#### Sub-Phase 3D: Shipment/Receipt → Order Event Flow (2 weeks)
+
+**Goal:** Convert Product's shipment/receipt SECAs that trigger Order actions to events.
+
+**Tasks:**
+1. Product publishes `ShipmentReceiptCreated` event.
+2. Order subscribes and handles:
+   - `updateReturnStatusFromReceipt` (return status updates)
+   - `updateOrderStatusFromReceipt` (order status updates)
+3. Product publishes `ItemIssued` event (already done in Phase 2).
+4. Order subscribes for `checkCreateStockRequirementQoh`.
+5. Convert remaining product→order SECAs:
+   - `receiveInventoryProduct` → `setUnitPriceAsLastPrice` (order)
+
+> **🔲 CHECKPOINT 3D — Human Review Required**
+> - [ ] All product→order SECAs converted to events
+> - [ ] End-to-end: receive purchase shipment → order status updates correctly
+> - [ ] End-to-end: process return shipment → return status updates correctly
+> - [ ] No stale order statuses observed during 48-hour test run
+
+---
+
+#### Sub-Phase 3E: Order→Party Decoupling (2 weeks)
+
+**Goal:** Eliminate Order's 52-point coupling to Party (28 imports, 19 entity accesses, 5 SECAs).
+
+**Tasks:**
+1. Create Party Query API for contact/address/party data:
+   - `GET /api/v1/party/parties/{id}` (Party, Person, PartyGroup)
+   - `GET /api/v1/party/contact-mechs/{partyId}` (PostalAddress, ContactMech)
+   - `GET /api/v1/party/relationships/{partyId}` (PartyRelationship)
+2. Replace 28 party imports (`ContactHelper`, `PartyHelper`, `PartyWorker`, etc.) with adapter layer.
+3. Convert 5 order→party SECAs (`ensurePartyRole`, `updateCommunicationEvent`) to events or API calls.
+
+> **🔲 CHECKPOINT 3E — Human Review Required**
+> - [ ] Party Query API covers all 11 party entity types Order accesses
+> - [ ] All 28 party imports eliminated from Order code
+> - [ ] Order test suite passes with party access via API
+
+---
+
+#### Sub-Phase 3F: Remaining Order→Accounting Cleanup (1 week)
+
+**Goal:** Ensure all order→accounting coupling uses the infrastructure built in Phase 2.
+
+**Tasks:**
+1. Verify `PaymentGatewayPort` (from Phase 2E) covers all remaining order→accounting calls.
+2. Verify Order uses Accounting Query API (from Phase 2C) for all entity reads.
+3. Remove any residual direct coupling.
+
+> **🔲 CHECKPOINT 3F — Human Review Required**
+> - [ ] Zero direct dispatcher calls from Order to Accounting
+> - [ ] Zero direct entity reads of accounting-owned entities from Order code
+> - [ ] Integration test: checkout payment flow works via Payment Gateway Port
+
+---
+
+#### Sub-Phase 3G: Order Schema Separation (3 weeks)
+
+**Goal:** Migrate Order's 167 entities to a separate schema.
+
+**Tasks:**
+1. Create `order` schema.
+2. Migrate order-owned entities (167 from `order-entitymodel.xml`).
+3. Replace cross-domain view entities (`OrderHeaderAndItems`, etc.) with API-composed queries.
+4. Remove cross-schema foreign keys.
+5. Validate data integrity post-migration.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **View entity replacement strategy:** OFBiz uses ~20 cross-domain view entities involving order. Should we implement these as materialized views in the Order schema (faster queries, but stale data) or as real-time API joins (always fresh, but slower)?
+
+> **🔲 CHECKPOINT 3G — Human Review Required**
+> - [ ] Schema migration validated in staging
+> - [ ] All cross-domain view entities replaced
+> - [ ] View entity replacement strategy confirmed (materialized view vs. API join)
+> - [ ] Data integrity: zero orphaned records
+
+---
+
+#### Sub-Phase 3H: Saga Implementation for Critical Flows (2 weeks)
+
+**Goal:** Implement saga/compensation patterns for the critical distributed transactions.
+
+**Tasks:**
+1. **Checkout saga:** Order creation → Payment auth (Accounting) → Inventory reservation (Product) → Production run (Manufacturing, if configurable product). Compensations at each step.
+2. **Return saga:** Return creation → Refund (Accounting) → Inventory receipt (Product). Compensations at each step.
+3. **Shipment saga:** Shipment status change → Invoice creation (Accounting) → Order status update (Order). Compensations.
+4. Implement saga orchestrator service or use choreography-based sagas via events.
+
+**Open spec questions (gate before proceeding):**
+- ❓ **Saga pattern:** Orchestration (central coordinator) vs. Choreography (event-driven, each service knows its next step)? Orchestration is easier to understand and debug; choreography is more resilient but harder to trace.
+- ❓ **Compensation semantics:** When payment auth succeeds but inventory reservation fails, should we void the auth immediately or hold it for retry? Business rule needed.
+
+> **🔲 CHECKPOINT 3H — Human Review Required**
+> - [ ] Saga pattern choice documented (orchestration vs. choreography)
+> - [ ] All 3 critical saga flows implemented and tested
+> - [ ] Failure scenarios tested: payment fails, inventory fails, manufacturing fails — correct compensations triggered
+> - [ ] Saga execution traced end-to-end in distributed tracing tool
+
+---
+
+#### Sub-Phase 3I: Integration Testing + Production Cutover (2 weeks)
+
+**Goal:** Final validation and production deployment.
+
+**Tasks:**
+1. Full regression testing of all order flows.
+2. Performance testing under production-like load.
+3. Chaos testing: kill each dependent service individually, verify graceful degradation.
+4. Production deployment with feature flags, 2-week bake period.
+
+> **🔲 CHECKPOINT 3I — Human Review Required (Production Go/No-Go)**
+> - [ ] Full regression: all order flows pass (place, modify, cancel, return, exchange)
+> - [ ] Performance: checkout latency within 15% of pre-decoupling baseline
+> - [ ] Chaos test results reviewed — all circuit breakers work correctly
+> - [ ] 2-week bake period with zero critical incidents
+> - [ ] **Sign-off from engineering lead, product owner, and operations team**
+
+**Estimated total: 22 weeks development + 2 weeks bake = ~24 weeks** for full Phase 3 extraction.
 
 ---
 
