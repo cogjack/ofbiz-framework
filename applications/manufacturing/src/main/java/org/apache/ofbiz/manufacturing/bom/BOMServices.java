@@ -676,7 +676,7 @@ public class BOMServices {
                 for (Map<String, Object> stringObjectMap : contentList) {
                     Map<String, Object> contentMap = UtilGenerics.cast(stringObjectMap);
                     Map<String, Object> content = UtilGenerics.cast(contentMap.get("content"));
-                    OrderReadHelper orderReadHelper = (OrderReadHelper) content.get("orderReadHelper");
+                    OrderHelper orderReadHelper = (OrderHelper) content.get("orderReadHelper");
                     List<BOMNode> productsInPackages = UtilGenerics.cast(content.get("productsInPackages"));
                     GenericValue orderShipment = (GenericValue) content.get("orderShipment");
 
@@ -731,7 +731,7 @@ public class BOMServices {
                             try {
                                 ShipmentPackageCreatedResult pkgResult = prodPort.createShipmentPackage(
                                         orderShipment.getString("shipmentId"), boxTypeId);
-                                shipmentPackageSeqId = pkgResult.shipmentPackageSeqId();
+                                shipmentPackageSeqId = pkgResult.getShipmentPackageSeqId();
                             } catch (RuntimeException e) {
                                 return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingPackageConfiguratorError", locale));
                             }

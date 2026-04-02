@@ -278,7 +278,7 @@ public class ProductionRunServices {
                 workEffortName, description, facilityId,
                 startDate, null, pRQuantity,
                 null, null, null, null, null, null);
-        String productionRunId = headerResult.workEffortId();
+        String productionRunId = headerResult.getWorkEffortId();
         if (Debug.infoOn()) {
             Debug.logInfo("ProductionRun created: " + productionRunId, MODULE);
         }
@@ -310,7 +310,7 @@ public class ProductionRunServices {
                         routingTaskAssoc.getLong("sequenceNum"),
                         routingTask.getDouble("estimatedSetupMillis"),
                         routingTask.getDouble("estimatedMilliSeconds"));
-                String productionRunTaskId = taskResult.workEffortId();
+                String productionRunTaskId = taskResult.getWorkEffortId();
                 if (Debug.infoOn()) {
                     Debug.logInfo("ProductionRunTaskId created: " + productionRunTaskId, MODULE);
                 }
@@ -855,10 +855,10 @@ public class ProductionRunServices {
                     AccountingPort accountingPort = new DispatcherAccountingPort(dispatcher, userLogin);
                     AccountingPreferencesResult acctPrefs = accountingPort.getPartyAccountingPreferences(
                             facility.getString("ownerPartyId"));
-                    if (acctPrefs.baseCurrencyUomId() == null) {
+                    if (acctPrefs.getBaseCurrencyUomId() == null) {
                         return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingProductionRunUnableToFindCosts", locale));
                     }
-                    outputMap = dispatcher.runSync("getProductionRunCost", UtilMisc.<String, Object>toMap("userLogin", userLogin, "workEffortId",
+                    Map<String, Object> outputMap = dispatcher.runSync("getProductionRunCost", UtilMisc.<String, Object>toMap("userLogin", userLogin, "workEffortId",
                             productionRunId));
                     if (ServiceUtil.isError(outputMap)) {
                         return ServiceUtil.returnError(ServiceUtil.getErrorMessage(outputMap));
@@ -884,7 +884,7 @@ public class ProductionRunServices {
                                             "costComponentCalc", costComponentCalc,
                                             "costComponentTypePrefix", "ACTUAL",
                                             "baseCost", totalCost,
-                                            "currencyUomId", acctPrefs.baseCurrencyUomId(),
+                                            "currencyUomId", acctPrefs.getBaseCurrencyUomId(),
                                             "userLogin", userLogin));
                             if (ServiceUtil.isError(costMethodResult)) {
                                 return ServiceUtil.returnError(ServiceUtil.getErrorMessage(costMethodResult));
@@ -895,7 +895,7 @@ public class ProductionRunServices {
                             productPort.createCostComponent(productionRunId,
                                     "ACTUAL_" + productCostComponentCalc.getString("costComponentTypeId"),
                                     costComponentCalc.getString("costComponentCalcId"),
-                                    acctPrefs.baseCurrencyUomId(), productCostAdjustment, null);
+                                    acctPrefs.getBaseCurrencyUomId(), productCostAdjustment, null);
                         }
                     }
                 } catch (GenericEntityException | GenericServiceException | RuntimeException gse) {
@@ -1488,7 +1488,7 @@ public class ProductionRunServices {
                 estimatedStartDate, estimatedCompletionDate, pRQuantity,
                 productionRunId, routingTask.getString("fixedAssetId"),
                 null, priority, estimatedSetupMillis, estimatedMilliSeconds);
-        String productionRunTaskId = rtResult.workEffortId();
+        String productionRunTaskId = rtResult.getWorkEffortId();
         if (Debug.infoOn()) {
             Debug.logInfo("ProductionRunTaskId created: " + productionRunTaskId, MODULE);
         }
@@ -1605,7 +1605,7 @@ public class ProductionRunServices {
                 if (createLotIfNeeded) {
                     ProductPort lotPort = new DispatcherProductPort(dispatcher, userLogin);
                     LotCreatedResult lotResult = lotPort.createLot(lotId, UtilDateTime.nowTimestamp());
-                    lotId = lotResult.lotId();
+                    lotId = lotResult.getLotId();
                 } else if (UtilValidate.isNotEmpty(lotId)) {
                     return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingLotNotExists", locale));
                 }
@@ -1633,14 +1633,14 @@ public class ProductionRunServices {
             AccountingPort accountingPort = new DispatcherAccountingPort(dispatcher, userLogin);
             AccountingPreferencesResult acctPrefs = accountingPort.getPartyAccountingPreferences(
                     facility.getString("ownerPartyId"));
-            if (acctPrefs.baseCurrencyUomId() == null) {
+            if (acctPrefs.getBaseCurrencyUomId() == null) {
                 return ServiceUtil.returnError(UtilProperties.getMessage(RESOURCE, "ManufacturingProductionRunUnableToFindCosts", locale));
             }
             ProductPort costPort = new DispatcherProductPort(dispatcher, userLogin);
             ProductCostResult costResult = costPort.getProductCost(
                     productionRun.getProductProduced().getString("productId"),
-                    acctPrefs.baseCurrencyUomId(), "EST_STD");
-            unitCost = costResult.productCost();
+                    acctPrefs.getBaseCurrencyUomId(), "EST_STD");
+            unitCost = costResult.getProductCost();
             if (unitCost != null && unitCost.compareTo(BigDecimal.ZERO) == 0) {
                 BigDecimal totalCost = ZERO;
                 List<GenericValue> tasks = productionRun.getProductionRunRoutingTasks();
@@ -1648,7 +1648,7 @@ public class ProductionRunServices {
                 List<GenericValue> actualGenCosts = EntityQuery.use(delegator)
                         .from("CostComponent")
                         .where("workEffortId", productionRunId,
-                                "costUomId", acctPrefs.baseCurrencyUomId())
+                                "costUomId", acctPrefs.getBaseCurrencyUomId())
                         .queryList();
                 for (GenericValue actualGenCost : actualGenCosts) {
                     totalCost = totalCost.add((BigDecimal) actualGenCost.get("cost"));
@@ -1657,7 +1657,7 @@ public class ProductionRunServices {
                     List<GenericValue> otherCosts = EntityQuery.use(delegator)
                             .from("CostComponent")
                             .where("workEffortId", task.get("workEffortId"),
-                                    "costUomId", acctPrefs.baseCurrencyUomId())
+                                    "costUomId", acctPrefs.getBaseCurrencyUomId())
                             .queryList();
                     for (GenericValue otherCost : otherCosts) {
                         totalCost = totalCost.add((BigDecimal) otherCost.get("cost"));
@@ -1698,7 +1698,7 @@ public class ProductionRunServices {
                             productionRun.getGenericValue().getString("facilityId"),
                             "INV_AVAILABLE", itemUnitCost, null, lotId, uomId, locationSeqId,
                             now, now, "Created by production run " + productionRunId, null);
-                    String inventoryItemId = iiResult.inventoryItemId();
+                    String inventoryItemId = iiResult.getInventoryItemId();
                     inventoryItemIds.add(inventoryItemId);
                     prodPort.createInventoryItemDetail(inventoryItemId, productionRunId,
                             BigDecimal.ONE, BigDecimal.ONE);
@@ -1721,7 +1721,7 @@ public class ProductionRunServices {
                         productionRun.getGenericValue().getString("facilityId"),
                         null, itemUnitCost, null, lotId, uomId, locationSeqId,
                         now, now, "Created by production run " + productionRunId, null);
-                String inventoryItemId = iiResult.inventoryItemId();
+                String inventoryItemId = iiResult.getInventoryItemId();
                 inventoryItemIds.add(inventoryItemId);
                 prodPort.createInventoryItemDetail(inventoryItemId, productionRunId,
                         quantity, quantity);
@@ -1865,7 +1865,7 @@ public class ProductionRunServices {
                             productId, "SERIALIZED_INV_ITEM", facilityId,
                             "INV_AVAILABLE", unitCost, currencyUomId, lotId, uomId, null,
                             now, now, "Created by production run task " + productionRunTaskId, isReturned);
-                    String inventoryItemId = iiResult.inventoryItemId();
+                    String inventoryItemId = iiResult.getInventoryItemId();
                     prodPort.createInventoryItemDetail(inventoryItemId, productionRunTaskId,
                             BigDecimal.ONE, BigDecimal.ONE);
                     wfPort.createWorkEffortInventoryProduced(productionRunTaskId, inventoryItemId);
@@ -1885,7 +1885,7 @@ public class ProductionRunServices {
                         productId, "NON_SERIAL_INV_ITEM", facilityId,
                         null, unitCost, currencyUomId, lotId, uomId, null,
                         now, now, "Created by production run task " + productionRunTaskId, isReturned);
-                String inventoryItemId = iiResult.inventoryItemId();
+                String inventoryItemId = iiResult.getInventoryItemId();
                 prodPort.createInventoryItemDetail(inventoryItemId, productionRunTaskId,
                         quantity, quantity);
                 wfPort.createWorkEffortInventoryProduced(productionRunTaskId, inventoryItemId);
@@ -2450,8 +2450,8 @@ public class ProductionRunServices {
             ProductPort prodPort = new DispatcherProductPort(dispatcher, userLogin);
             InventoryAvailableResult invAvail = prodPort.getInventoryAvailableByFacility(
                     orderItem.getString("productId"), facilityId);
-            if (invAvail.availableToPromiseTotal() != null) {
-                existingAtp = invAvail.availableToPromiseTotal();
+            if (invAvail.getAvailableToPromiseTotal() != null) {
+                existingAtp = invAvail.getAvailableToPromiseTotal();
             }
             // if the order is immediately fulfilled, adjust the atp to compensate for it not reserved
             if (isImmediatelyFulfilled) {
@@ -2468,8 +2468,9 @@ public class ProductionRunServices {
                 // ok so that's how many we WANT to produce, but let's check how many we can actually produce based on the available components
                 MktgPackagesAvailableResult mktgResult = prodPort.getMktgPackagesAvailable(
                         orderItem.getString("productId"), facilityId);
-                BigDecimal mktgPackagesAvailable = mktgResult.availableToPromiseTotal();
+                BigDecimal mktgPackagesAvailable = mktgResult.getAvailableToPromiseTotal();
                 Map<String, Object> serviceContext = new HashMap<>();
+                Map<String, Object> serviceResult;
 
                 BigDecimal qtyToProduce = qtyRequired.min(mktgPackagesAvailable);
                 /*
@@ -3080,11 +3081,10 @@ public class ProductionRunServices {
                             + "] inventory item [" + inventoryItem.getString("inventoryItemId") + "]",
                     null, inventoryItem.getString("facilityId"),
                     now, null, null, null, null, null, null, null, null);
-            String workEffortId = weResult.workEffortId();
-            Map<String, Object> serviceContext;
+            String workEffortId = weResult.getWorkEffortId();
+            Map<String, Object> serviceContext = new HashMap<>();
             Map<String, Object> serviceResult;
             // the inventory (marketing package) is issued
-            serviceContext.clear();
             serviceContext = UtilMisc.toMap("inventoryItem", inventoryItem,
                     "workEffortId", workEffortId, "userLogin", userLogin);
             if (quantity != null) {
@@ -3107,7 +3107,7 @@ public class ProductionRunServices {
             ProductCostResult pkgCostResult = productPort.getProductCost(
                     inventoryItem.getString("productId"),
                     inventoryItem.getString("currencyUomId"), "EST_STD");
-            BigDecimal packageCost = pkgCostResult.productCost();
+            BigDecimal packageCost = pkgCostResult.getProductCost();
             BigDecimal inventoryItemCost = inventoryItem.getBigDecimal("unitCost");
             BigDecimal costCoefficient = null;
             if (packageCost == null || packageCost.compareTo(ZERO) == 0 || inventoryItemCost == null) {
@@ -3141,7 +3141,7 @@ public class ProductionRunServices {
                 ProductCostResult compCostResult = productPort.getProductCost(
                         ((GenericValue) component.get("product")).getString("productId"),
                         inventoryItem.getString("currencyUomId"), "EST_STD");
-                BigDecimal componentCost = compCostResult.productCost();
+                BigDecimal componentCost = compCostResult.getProductCost();
 
                 // return the component to inventory at its standard cost multiplied by the cost coefficient from above
                 BigDecimal componentInventoryItemCost = costCoefficient.multiply(componentCost);

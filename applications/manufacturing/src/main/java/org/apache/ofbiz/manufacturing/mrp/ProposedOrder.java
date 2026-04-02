@@ -278,7 +278,7 @@ public class ProposedOrder {
                     requirementStartDate,
                     quantity,
                     (String) parameters.get("description"));
-            return reqResult.requirementId();
+            return reqResult.getRequirementId();
         } catch (RuntimeException e) {
             Debug.logError(e, "Error : createRequirement with parameters = " + parameters + "--" + e.getMessage(), MODULE);
             return null;
