@@ -24,7 +24,7 @@ import java.util.List;
  * Minimal projection of the result returned by the getProductVariant service.
  * Contains a list of product IDs matching the selected features.
  */
-public class ProductVariantResult {
+public final class ProductVariantResult {
 
     private final List<String> productIds;
 

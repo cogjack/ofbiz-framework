@@ -22,7 +22,7 @@ package org.apache.ofbiz.manufacturing.ports.dto;
  * Minimal projection of the result returned by the createShipmentPackage service.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class ShipmentPackageCreatedResult {
+public final class ShipmentPackageCreatedResult {
 
     private final String shipmentPackageSeqId;
 

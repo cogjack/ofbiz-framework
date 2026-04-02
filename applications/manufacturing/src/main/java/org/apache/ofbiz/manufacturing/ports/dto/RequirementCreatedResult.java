@@ -22,7 +22,7 @@ package org.apache.ofbiz.manufacturing.ports.dto;
  * Minimal projection of the result returned by the createRequirement service.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class RequirementCreatedResult {
+public final class RequirementCreatedResult {
 
     private final String requirementId;
 

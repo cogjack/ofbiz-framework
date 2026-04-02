@@ -24,7 +24,7 @@ import java.math.BigDecimal;
  * Minimal projection of the result returned by the getMktgPackagesAvailable service.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class MktgPackagesAvailableResult {
+public final class MktgPackagesAvailableResult {
 
     private final BigDecimal availableToPromiseTotal;
 

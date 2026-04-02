@@ -22,7 +22,7 @@ package org.apache.ofbiz.manufacturing.ports.dto;
  * Minimal projection of the result returned by the createLot service.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class LotCreatedResult {
+public final class LotCreatedResult {
 
     private final String lotId;
 

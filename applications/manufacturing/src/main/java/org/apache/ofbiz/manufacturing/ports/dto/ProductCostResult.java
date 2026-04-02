@@ -24,7 +24,7 @@ import java.math.BigDecimal;
  * Minimal projection of the result returned by the getProductCost service.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class ProductCostResult {
+public final class ProductCostResult {
 
     private final BigDecimal productCost;
 

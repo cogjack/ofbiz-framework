@@ -22,7 +22,7 @@ package org.apache.ofbiz.manufacturing.ports.dto;
  * Minimal projection of the result returned by the createCostComponent service.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class CostComponentCreatedResult {
+public final class CostComponentCreatedResult {
 
     private final String costComponentId;
 

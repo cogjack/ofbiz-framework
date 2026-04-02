@@ -22,7 +22,7 @@ package org.apache.ofbiz.manufacturing.ports.dto;
  * Minimal projection of the result returned by the createWorkEffort service.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class WorkEffortCreatedResult {
+public final class WorkEffortCreatedResult {
 
     private final String workEffortId;
 

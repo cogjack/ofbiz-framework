@@ -25,7 +25,7 @@ import java.math.BigDecimal;
  * and getInventoryAvailableByFacility services.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class InventoryAvailableResult {
+public final class InventoryAvailableResult {
 
     private final BigDecimal quantityOnHandTotal;
     private final BigDecimal availableToPromiseTotal;

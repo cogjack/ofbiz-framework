@@ -22,7 +22,7 @@ package org.apache.ofbiz.manufacturing.ports.dto;
  * Minimal projection of the result returned by the createInventoryItem service.
  * Only includes the fields that manufacturing actually consumes.
  */
-public class InventoryItemCreatedResult {
+public final class InventoryItemCreatedResult {
 
     private final String inventoryItemId;
 

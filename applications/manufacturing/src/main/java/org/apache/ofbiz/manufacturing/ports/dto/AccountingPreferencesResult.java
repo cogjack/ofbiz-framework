@@ -22,7 +22,7 @@ package org.apache.ofbiz.manufacturing.ports.dto;
  * Minimal projection of the result returned by the getPartyAccountingPreferences service.
  * Only includes the fields that manufacturing actually consumes (the base currency).
  */
-public class AccountingPreferencesResult {
+public final class AccountingPreferencesResult {
 
     private final String baseCurrencyUomId;
 
