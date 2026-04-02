@@ -150,7 +150,6 @@ under the License.
 
     <eca service="createShipmentReceipt" event="commit">
         <condition field-name="returnId" operator="is-not-empty"/>
-        <action service="checkDecomposeInventoryItem" mode="sync"/>
         <action service="updateReturnStatusFromReceipt" mode="sync" run-as-user="system"/>
     </eca>
     <eca service="createShipmentReceipt" event="commit">
@@ -158,12 +157,13 @@ under the License.
         <action service="updateOrderStatusFromReceipt" mode="sync" run-as-user="system"/>
     </eca>
     <eca service="createShipmentReceipt" event="commit">
-        <condition field-name="inventoryItemId" operator="is-not-empty"/>
-        <action service="checkDecomposeInventoryItem" mode="sync"/>
-    </eca>
-    <eca service="createShipmentReceipt" event="commit">
         <condition field-name="shipmentId" operator="is-not-empty"/>
         <action service="updatePurchaseShipmentFromReceipt" mode="sync"/>
+    </eca>
+
+    <!-- Event Bus: publish shipment receipt domain events (replaces cross-domain manufacturing SECAs) -->
+    <eca service="createShipmentReceipt" event="commit">
+        <action service="publishShipmentReceiptCreated" mode="sync"/>
     </eca>
 
     <eca service="createShipmentRouteSegment" event="commit">

@@ -305,5 +305,25 @@ under the License.
         <description>Delete a WorkReqFulfType record</description>
         <auto-attributes mode="IN" include="pk"/>
     </service>
+
+    <!-- Event Bus Publishing Services -->
+    <service name="publishRequirementCreated" engine="java"
+            location="org.apache.ofbiz.order.requirement.RequirementEventPublisher" invoke="publishRequirementCreated">
+        <description>Publish a RequirementCreated domain event to the event bus</description>
+        <attribute name="requirementId" type="String" mode="IN" optional="true"/>
+        <attribute name="requirementTypeId" type="String" mode="IN" optional="true"/>
+        <attribute name="facilityId" type="String" mode="IN" optional="true"/>
+        <attribute name="productId" type="String" mode="IN" optional="true"/>
+        <attribute name="quantity" type="BigDecimal" mode="IN" optional="true"/>
+        <attribute name="requiredByDate" type="Timestamp" mode="IN" optional="true"/>
+        <attribute name="statusId" type="String" mode="IN" optional="true"/>
+    </service>
+    <service name="publishRequirementUpdated" engine="java"
+            location="org.apache.ofbiz.order.requirement.RequirementEventPublisher" invoke="publishRequirementUpdated">
+        <description>Publish a RequirementUpdated domain event to the event bus</description>
+        <attribute name="requirementId" type="String" mode="IN" optional="true"/>
+        <attribute name="statusId" type="String" mode="IN" optional="true"/>
+        <attribute name="quantity" type="BigDecimal" mode="IN" optional="true"/>
+    </service>
 </services>
 
