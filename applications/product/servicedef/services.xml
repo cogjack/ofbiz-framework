@@ -1833,4 +1833,13 @@ under the License.
         <implements service="permissionInterface"/>
         <attribute name="productId" mode="IN" type="String" optional="true"/>
     </service>
+
+    <!-- Event Bus Publishing Services -->
+    <service name="publishProductAssocDeleted" engine="java"
+            location="org.apache.ofbiz.product.product.ProductEventPublisher" invoke="publishProductAssocDeleted">
+        <description>Publish a ProductAssocDeleted domain event to the event bus</description>
+        <attribute name="productId" type="String" mode="IN" optional="true"/>
+        <attribute name="productIdTo" type="String" mode="IN" optional="true"/>
+        <attribute name="productAssocTypeId" type="String" mode="IN" optional="true"/>
+    </service>
 </services>

@@ -20,22 +20,8 @@ under the License.
 
 <service-eca xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="https://ofbiz.apache.org/dtds/service-eca.xsd">
-    <eca service="updateRequirement" event="commit">
-        <condition field-name="requirementTypeId" operator="equals" value="INTERNAL_REQUIREMENT"/>
-        <condition field-name="statusId" operator="equals" value="REQ_APPROVED"/>
-        <condition field-name="oldStatusId" operator="not-equals" value="REQ_APPROVED"/>
-        <action service="createProductionRunFromRequirement" mode="sync"/>
-    </eca>
-    <eca service="createRequirement" event="commit">
-        <condition field-name="requirementTypeId" operator="equals" value="INTERNAL_REQUIREMENT"/>
-        <condition field-name="statusId" operator="equals" value="REQ_APPROVED"/>
-        <action service="createProductionRunFromRequirement" mode="sync"/>
-    </eca>
+    <!-- Internal manufacturing SECA (both trigger and action are in manufacturing) -->
     <eca service="createBOMAssoc" event="commit">
-        <condition field-name="productAssocTypeId" operator="equals" value="MANUF_COMPONENT"/>
-        <action service="updateLowLevelCode" mode="sync"/>
-    </eca>
-    <eca service="deleteProductAssoc" event="commit">
         <condition field-name="productAssocTypeId" operator="equals" value="MANUF_COMPONENT"/>
         <action service="updateLowLevelCode" mode="sync"/>
     </eca>

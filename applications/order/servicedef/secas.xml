@@ -570,4 +570,17 @@ under the License.
     <eca service="updateCustRequestAttribute" event="commit">
         <action service="updateCustRequestLastModifiedDate" mode="sync"/>
     </eca>
+
+    <!-- Event Bus: publish requirement domain events (replaces cross-domain manufacturing SECAs) -->
+    <eca service="createRequirement" event="commit">
+        <condition field-name="requirementTypeId" operator="equals" value="INTERNAL_REQUIREMENT"/>
+        <condition field-name="statusId" operator="equals" value="REQ_APPROVED"/>
+        <action service="publishRequirementCreated" mode="sync"/>
+    </eca>
+    <eca service="updateRequirement" event="commit">
+        <condition field-name="requirementTypeId" operator="equals" value="INTERNAL_REQUIREMENT"/>
+        <condition field-name="statusId" operator="equals" value="REQ_APPROVED"/>
+        <condition field-name="oldStatusId" operator="not-equals" value="REQ_APPROVED"/>
+        <action service="publishRequirementUpdated" mode="sync"/>
+    </eca>
 </service-eca>

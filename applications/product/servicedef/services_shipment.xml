@@ -1348,4 +1348,15 @@ under the License.
         <implements service="permissionInterface"/>
         <attribute name="shipmentId" type="String" mode="IN" optional="true"/>
     </service>
+
+    <!-- Event Bus Publishing Services -->
+    <service name="publishShipmentReceiptCreated" engine="java"
+            location="org.apache.ofbiz.product.product.ProductEventPublisher" invoke="publishShipmentReceiptCreated">
+        <description>Publish a ShipmentReceiptCreated domain event to the event bus</description>
+        <attribute name="shipmentId" type="String" mode="IN" optional="true"/>
+        <attribute name="receiptId" type="String" mode="IN" optional="true"/>
+        <attribute name="productId" type="String" mode="IN" optional="true"/>
+        <attribute name="quantityAccepted" type="BigDecimal" mode="IN" optional="true"/>
+        <attribute name="inventoryItemId" type="String" mode="IN" optional="true"/>
+    </service>
 </services>

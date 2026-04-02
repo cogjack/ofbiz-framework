@@ -152,4 +152,10 @@ under the License.
     <eca service="createProductStoreGroupRollup" event="commit">
         <action service="checkProductStoreGroupRollup" mode="sync"/>
     </eca>
+
+    <!-- Event Bus: publish product assoc domain events (replaces cross-domain manufacturing SECAs) -->
+    <eca service="deleteProductAssoc" event="commit">
+        <condition field-name="productAssocTypeId" operator="equals" value="MANUF_COMPONENT"/>
+        <action service="publishProductAssocDeleted" mode="sync"/>
+    </eca>
 </service-eca>

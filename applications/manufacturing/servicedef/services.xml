@@ -29,4 +29,10 @@ under the License.
         <description>Runs the package configurator.</description>
         <attribute mode="IN" name="shipmentId" optional="false" type="String"/>
     </service>
+
+    <service name="initManufacturingEventSubscriptions" engine="java" auth="false"
+            location="org.apache.ofbiz.manufacturing.event.ManufacturingEventSubscriber"
+            invoke="initEventSubscriptions">
+        <description>Initialize manufacturing event bus subscriptions</description>
+    </service>
 </services>
