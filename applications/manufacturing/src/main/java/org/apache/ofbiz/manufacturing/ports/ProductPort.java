@@ -190,6 +190,17 @@ public interface ProductPort {
     ProductVariantResult getProductVariant(String productId, Map<String, String> selectedFeatures);
 
     /**
+     * Returns the aggregated instance product ID for a configured product.
+     * <p>Abstracts the {@code ProductWorker.getAggregatedInstanceId} utility method.
+     * Called from {@code ProductionRunServices.createProductionRunFromConfiguration}.</p>
+     *
+     * @param productId the configurable product ID
+     * @param configId  the configuration ID
+     * @return the aggregated instance product ID
+     */
+    String getAggregatedInstanceId(String productId, String configId);
+
+    /**
      * Creates a shipment package.
      * <p>Abstracts the {@code createShipmentPackage} service.
      * Called from {@code BOMServices.createShipmentPackages}.</p>

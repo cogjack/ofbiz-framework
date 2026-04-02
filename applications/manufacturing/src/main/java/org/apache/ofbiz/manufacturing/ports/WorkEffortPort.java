@@ -67,15 +67,21 @@ public interface WorkEffortPort {
      * Updates an existing work effort's mutable fields.
      * <p>Abstracts the {@code updateWorkEffort} service. Only non-null parameters are applied.</p>
      *
-     * @param workEffortId      the work effort to update
-     * @param currentStatusId   new status (nullable — no change if null)
-     * @param actualMilliSeconds actual runtime in ms (nullable)
-     * @param actualSetupMillis  actual setup time in ms (nullable)
-     * @param quantityProduced  quantity produced so far (nullable)
-     * @param quantityRejected  quantity rejected so far (nullable)
+     * @param workEffortId            the work effort to update
+     * @param currentStatusId          new status (nullable — no change if null)
+     * @param actualMilliSeconds       actual runtime in ms (nullable)
+     * @param actualSetupMillis        actual setup time in ms (nullable)
+     * @param quantityProduced         quantity produced so far (nullable)
+     * @param quantityRejected         quantity rejected so far (nullable)
+     * @param estimatedStartDate       updated estimated start (nullable)
+     * @param estimatedCompletionDate  updated estimated completion (nullable)
+     * @param actualStartDate          actual start timestamp (nullable)
+     * @param actualCompletionDate     actual completion timestamp (nullable)
      */
     void updateWorkEffort(String workEffortId, String currentStatusId, Double actualMilliSeconds,
-            Double actualSetupMillis, BigDecimal quantityProduced, BigDecimal quantityRejected);
+            Double actualSetupMillis, BigDecimal quantityProduced, BigDecimal quantityRejected,
+            Timestamp estimatedStartDate, Timestamp estimatedCompletionDate,
+            Timestamp actualStartDate, Timestamp actualCompletionDate);
 
     /**
      * Creates an association between two work efforts.

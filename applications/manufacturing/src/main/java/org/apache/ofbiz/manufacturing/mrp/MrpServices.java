@@ -43,6 +43,9 @@ import org.apache.ofbiz.entity.condition.EntityOperator;
 import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.entity.util.EntityUtil;
 import org.apache.ofbiz.manufacturing.bom.BOMNode;
+import org.apache.ofbiz.manufacturing.ports.ProductPort;
+import org.apache.ofbiz.manufacturing.ports.dto.InventoryAvailableResult;
+import org.apache.ofbiz.manufacturing.ports.impl.DispatcherProductPort;
 import org.apache.ofbiz.service.DispatchContext;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
@@ -523,23 +526,20 @@ public class MrpServices {
     }
 
     public static BigDecimal findProductMrpQoh(String mrpId, String productId, String facilityId, LocalDispatcher dispatcher, Delegator delegator) {
-        Map<String, Object> resultMap = null;
         try {
+            ProductPort productPort = new DispatcherProductPort(dispatcher, null);
+            InventoryAvailableResult invResult;
             if (facilityId == null) {
-                resultMap = dispatcher.runSync("getProductInventoryAvailable", UtilMisc.toMap("productId", productId));
+                invResult = productPort.getProductInventoryAvailable(productId);
             } else {
-                resultMap = dispatcher.runSync("getInventoryAvailableByFacility", UtilMisc.toMap("productId", productId, "facilityId", facilityId));
+                invResult = productPort.getInventoryAvailableByFacility(productId, facilityId);
             }
-            if (ServiceUtil.isError(resultMap)) {
-                String errorMessage = ServiceUtil.getErrorMessage(resultMap);
-                Debug.logError(errorMessage, MODULE);
-            }
-        } catch (GenericServiceException e) {
+            return invResult.getQuantityOnHandTotal();
+        } catch (RuntimeException e) {
             Debug.logError(e, "Error calling getProductInventoryAvailableByFacility service", MODULE);
             logMrpError(mrpId, productId, "Unable to count inventory", delegator);
             return BigDecimal.ZERO;
         }
-        return ((BigDecimal) resultMap.get("quantityOnHandTotal"));
     }
 
     public static void logMrpError(String mrpId, String productId, String errorMessage, Delegator delegator) {
